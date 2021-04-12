@@ -85,17 +85,40 @@ long[complete.cases(long['Mean']),] %>%
   ylab('Mean Pitch Variability') +
   xlab('Diagnosis')
 
-
-plot <- d %>% 
-  ggplot(aes(x = Paper)) + 
-  geom_point(aes(y = PitchMeanTD_Mean), color = 'royalblue') +
-  geom_linerange(aes(ymin = PitchMeanTD_Mean - PitchMeanTD_SD, ymax = PitchMeanTD_Mean + PitchMeanTD_SD),
-                 color = 'royalblue') +
-  geom_point(aes(y = PitchMeanASD_Mean), shape = 1, color = 'firebrick') +
-  geom_linerange(aes(ymin = PitchMeanASD_Mean - PitchMeanASD_SD, ymax = PitchMeanASD_Mean + PitchMeanASD_SD),
-                 color = 'firebrick') + 
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
-
+# Formatting data
+d[complete.cases(d['PitchMeanTD_Mean']),] %>% 
+  mutate(n = Paper %>% as.factor() %>% as.numeric(),
+         colorTD = 'TD',
+         colorASD = 'ASD') %>% 
+  
+# Building plot
+  ggplot() + 
+  geom_point(aes(x = n, 
+                 y = PitchMeanTD_Mean,
+                 color = colorTD)) +
+  geom_linerange(aes(x = n,
+                     ymin = PitchMeanTD_Mean - PitchMeanTD_SD, 
+                     ymax = PitchMeanTD_Mean + PitchMeanTD_SD,
+                     color = colorTD)) +
+  geom_point(aes(x = n + 0.3,
+                 y = PitchMeanASD_Mean,
+                 color = colorASD), 
+             shape = 1) +
+  geom_linerange(aes(x = n + 0.3,
+                     ymin = PitchMeanASD_Mean - PitchMeanASD_SD, 
+                     ymax = PitchMeanASD_Mean + PitchMeanASD_SD,
+                     color = colorASD)) +
+  geom_vline(xintercept = c(1:15 + 0.65), alpha = 0.3) +
+  geom_hline(yintercept = (mean(d[complete.cases(d['PitchMeanTD_Mean']),]['PitchMeanTD_Mean'][,1]) +
+                           mean(d[complete.cases(d['PitchMeanASD_Mean']),]['PitchMeanASD_Mean'][,1]))/2, lty = 2) +
+  scale_x_discrete(limits = factor(1:16), 
+                   name = 'Study',
+                   labels = unique(d[complete.cases(d['PitchMeanASD_Mean']),]['Paper'])[,1]) + 
+  theme_classic() + 
+  ylab('Mean Pitch Variability') +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), 
+                     name = 'Diagnosis')
 
 ```
 
