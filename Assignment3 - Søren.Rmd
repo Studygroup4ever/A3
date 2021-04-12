@@ -24,10 +24,38 @@ The questions you need to answer are: What are the consequences of using a meta-
 Step 1: Perform a meta-analysis of pitch variability from previous studies of voice in ASD
 - N.B. all you need is in the two intro videos
 - the data is available as Ass3_MetaAnalysisData.tsv
-- You should calculate Effect size (cohen's d) and Standard Error (uncertainty in the Cohen's d) per each study, using escalc() from the metafor package (also check the livecoding intro)
+- You should calculate Effect size (cohen's d) and Standard Error (uncertainty in the Cohen's d) per each study, using escalc() from the metafor package (also check the livecoding intro).
 - N.B. for the purpose of the assignment we're only interested in getting a meta-analytic effect size for the meta-analytic prior (and not e.g. all the stuff on publication bias). See a brms tutorial here: https://vuorre.netlify.com/post/2016/09/29/meta-analysis-is-a-special-case-of-bayesian-multilevel-modeling/ The formula is EffectSize | se(StandardError) ~ 1 + (1 | Paper). Don't forget prior definition, model checking, etc.
 - N.B. the livecoding video is not perfect, you *can* (but don't have to) improve it: use a t-student likelihood, test the effects of the priors and refine them, check the robustness of results to more or less skeptical priors, etc. 
 - Write down the results of the meta-analysis in terms of a prior for step 2.
+
+```{r}
+# Load the data
+d <- read.delim('Ass3_MetaAnalysisData.tsv')[1:41,]
+
+#d <- read.delim('Ass3_MetaAnalysisData.tsv')
+```
+
+```{r}
+# Load packages
+pacman::p_load(metafor)
+
+```
+
+```{r}
+# Changing data structure - we need it to be long 
+d_long <- gather(d, condition, measurement, control:cond2, factor_key=TRUE)
+
+colnames(d)
+```
+
+```{r}
+# Meta analysis using metafor package
+?rma
+ma_out <- rma(data = d, yi = yi, sei = sei, slab = dat$study)
+summary(ma_out)
+```
+
 
 Step 2: Analyse pitch variability in ASD in two new studies for which you have access to all the trials (not just study level estimates)
 - the data is available as Ass3_data.csv. Notice there are 2 studies (language us, and language dk), multiple trials per participant, and a few different ways to measure pitch variability (if in doubt, focus on pitch IQR, interquartile range of the log of fundamental frequency)
