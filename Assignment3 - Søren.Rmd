@@ -57,9 +57,6 @@ d <- d %>%
 
 ```
 
-
-
-
 ```{r}
 # Familiarizing ourselves with the data
 
@@ -85,40 +82,43 @@ long[complete.cases(long['Mean']),] %>%
   ylab('Mean Pitch Variability') +
   xlab('Diagnosis')
 
+
 # Formatting data
-d[complete.cases(d['PitchMeanTD_Mean']),] %>% 
-  mutate(n = Paper %>% as.factor() %>% as.numeric(),
+d1 <- d[complete.cases(d['PitchMeanTD_Mean']),] %>% 
+  mutate(n = 1:nrow(d[complete.cases(d['PitchMeanTD_Mean']),]),
          colorTD = 'TD',
-         colorASD = 'ASD') %>% 
+         colorASD = 'ASD')
   
 # Building plot
-  ggplot() + 
-  geom_point(aes(x = n, 
+d1 %>% ggplot() + 
+  geom_point(aes(x = n + 0.3, 
                  y = PitchMeanTD_Mean,
                  color = colorTD)) +
-  geom_linerange(aes(x = n,
+  geom_linerange(aes(x = n + 0.3,
                      ymin = PitchMeanTD_Mean - PitchMeanTD_SD, 
                      ymax = PitchMeanTD_Mean + PitchMeanTD_SD,
                      color = colorTD)) +
-  geom_point(aes(x = n + 0.3,
+  geom_point(aes(x = n,
                  y = PitchMeanASD_Mean,
                  color = colorASD), 
              shape = 1) +
-  geom_linerange(aes(x = n + 0.3,
+  geom_linerange(aes(x = n,
                      ymin = PitchMeanASD_Mean - PitchMeanASD_SD, 
                      ymax = PitchMeanASD_Mean + PitchMeanASD_SD,
                      color = colorASD)) +
-  geom_vline(xintercept = c(1:15 + 0.65), alpha = 0.3) +
-  geom_hline(yintercept = (mean(d[complete.cases(d['PitchMeanTD_Mean']),]['PitchMeanTD_Mean'][,1]) +
-                           mean(d[complete.cases(d['PitchMeanASD_Mean']),]['PitchMeanASD_Mean'][,1]))/2, lty = 2) +
-  scale_x_discrete(limits = factor(1:16), 
+  geom_vline(xintercept = c(1:nrow(d1) + 0.65), alpha = 0.3) +
+  geom_vline(xintercept = nrow(d1) + 0.59) +
+  geom_hline(yintercept = (mean(d1$PitchMeanTD_Mean) +
+                           mean(d1$PitchMeanASD_Mean))/2, lty = 2) +
+  scale_x_discrete(limits = factor(1:nrow(d1)), 
                    name = 'Study',
-                   labels = unique(d[complete.cases(d['PitchMeanASD_Mean']),]['Paper'])[,1]) + 
+                   labels = d1$Paper) +
   theme_classic() + 
   ylab('Mean Pitch Variability') +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
   scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), 
                      name = 'Diagnosis')
+
 
 ```
 
