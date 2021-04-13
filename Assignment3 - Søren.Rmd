@@ -55,42 +55,80 @@ d <- d %>%
     PitchVariabilityTD_SD = as.numeric(PitchVariabilityTD_SD)
   ) %>% subset(!is.na(Year))
 
+d[23,1] <- "(Paul, et al., 2008)" # Fixing extra space
 ```
 
 ```{r}
 # Familiarizing ourselves with the data
 
+# Formatting data
 long_SD <- d %>% gather(condition, SD, PitchMeanASD_SD, PitchMeanTD_SD, factor_key=TRUE) %>% select(SD)
 
-long <- d %>% 
+long <- d %>% mutate(PaperYear = stri_sub(Paper,-5,-2),
+                     n = c(1:nrow(d)),
+                     direction = factor(ifelse(PitchMeanASD_Mean > PitchMeanTD_Mean, 'ASD>TD', 'ASD<TD'))) %>% 
   gather(condition, Mean, PitchMeanASD_Mean, PitchMeanTD_Mean, factor_key=TRUE) %>% 
   mutate(condition = ifelse( condition == 'PitchMeanASD_Mean', 'ASD', 'TD'),
          SD = long_SD$SD) 
 
-long[complete.cases(long['Mean']),] %>% 
-  ggplot(aes(x = Paper)) +
-  geom_point(aes(y = Mean), shape = 1) +
-  geom_linerange(aes(ymin = Mean - SD, ymax = Mean + SD)) +
-  facet_wrap(~condition) + 
-  theme(axis.text.x = element_text(angle = 60, hjust = 1))
+long1 <- long[complete.cases(long['Mean']),]
 
-long[complete.cases(long['Mean']),] %>% 
-  ggplot(aes(x = condition)) +
-  geom_point(aes(y = Mean), shape = 1) +
-  geom_linerange(aes(ymin = Mean - SD, ymax = Mean + SD)) +
-  facet_wrap(~Paper, scales = "free") +
-  ylab('Mean Pitch Variability') +
-  xlab('Diagnosis')
-
-
-# Formatting data
 d1 <- d[complete.cases(d['PitchMeanTD_Mean']),] %>% 
   mutate(n = 1:nrow(d[complete.cases(d['PitchMeanTD_Mean']),]),
          colorTD = 'TD',
          colorASD = 'ASD')
-  
-# Building plot
-d1 %>% ggplot() + 
+
+new_labels <- as_labeller(
+  c(
+    '1' = "(Sharda, et al., 2010)",
+    '2' = "(Filipe, et al., 2014)" ,
+    '3' = "(Filipe, et al., 2014)",
+    '4' = "(Diehl, et al., 2009)",
+    '5' = "(Diehl, et al., 2009)",
+    '6' = "(Scharfstein, et al., 2011)",
+    '12' = "(Grossman, et al., 2010)",
+    '13' = "(Bonneh, et al., 2011)" ,
+    '15' = "(Nadig & Shaw, 2012)",
+    '16' = "(Nadig & Shaw, 2012)" ,
+    '21' = "(Brisson et al 2014)" ,
+    '26' = "(Chan et al 2016)" ,
+    '29' = "(Quigley et al 2016)",
+    '30' = "(Quigley et al 2016)",
+    '31' = "(Dahlgren et al 2018)" ,
+    '32' = "(Fusaroli, Lambrechts, et al., 2016)",
+    '33' = "(Fusaroli, Lambrechts, et al., 2016)",
+    '34' = "(Fusaroli, et al., 2013)",
+    '35' = "(Fusaroli, et al., 2013)",
+    '36' = "(Fusaroli, et al., 2013)",
+    '37' = "(Fusaroli, Grossman, et al., 2015)",
+    '38' = "(Fusaroli, Grossman, et al., 2015)",
+    '39' = "(Fusaroli, Grossman, et al., 2015)",
+    '40' = "(Hubbard, et al., 2017)",
+    '41' = "(Seidl et al., 2018)"
+  )
+)
+
+
+# Building plots
+
+long1 %>% 
+  ggplot(aes(x = condition)) +
+  geom_point(aes(y = Mean, 
+                 color = direction), 
+             shape = 1) +
+  geom_linerange(aes(ymin = Mean - SD, 
+                     ymax = Mean + SD, 
+                     color = direction)) +
+  facet_wrap(~n, 
+             scales = "free",
+             labeller = new_labels) +
+  ylab('Mean Pitch Variability') +
+  xlab('Diagnosis')  +   
+  scale_color_manual(values = c('ASD>TD' = 'royalblue', 
+                                'ASD<TD' = 'firebrick'),
+                     name = 'Direction of Results')
+
+d1 %>%  ggplot() + 
   geom_point(aes(x = n + 0.3, 
                  y = PitchMeanTD_Mean,
                  color = colorTD)) +
@@ -108,8 +146,8 @@ d1 %>% ggplot() +
                      color = colorASD)) +
   geom_vline(xintercept = c(1:nrow(d1) + 0.65), alpha = 0.3) +
   geom_vline(xintercept = nrow(d1) + 0.59) +
-  geom_hline(yintercept = (mean(d1$PitchMeanTD_Mean) +
-                           mean(d1$PitchMeanASD_Mean))/2, lty = 2) +
+  # geom_hline(yintercept = (mean(d1$PitchMeanTD_Mean) +
+  #                          mean(d1$PitchMeanASD_Mean))/2, lty = 2) +
   scale_x_discrete(limits = factor(1:nrow(d1)), 
                    name = 'Study',
                    labels = d1$Paper) +
@@ -119,6 +157,32 @@ d1 %>% ggplot() +
   scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), 
                      name = 'Diagnosis')
 
+long1 %>% 
+  ggplot(aes(x = PaperYear, y = Mean, color = condition)) +
+  geom_point(shape = 1) +
+  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'),
+                     name = 'Diagnosis') +
+  geom_linerange(aes(ymin = Mean - SD, 
+                     ymax = Mean + SD,
+                     color = condition))
+
+d1 %>% 
+  ggplot() +
+  geom_point(aes(x = PitchMeanTD_Mean, 
+                 y = PitchMeanTD_SD, 
+                 color = colorTD,
+                 size = TD_N), 
+             shape = 1) +
+  geom_point(aes(x = PitchMeanASD_Mean,
+                 y = PitchMeanASD_SD,
+                 color = colorASD,
+                 size = ASD_N),
+             shape = 1) +
+  scale_size(name = 'Sample Size') +
+  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'),
+                     name = 'Diagnosis') +
+  xlab('Pitch Mean') +
+  ylab('Pitch SD')
 
 ```
 
