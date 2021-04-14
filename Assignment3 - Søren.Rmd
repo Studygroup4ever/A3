@@ -36,7 +36,8 @@ pacman::p_load(metafor,
                tidyverse, 
                stringi, 
                readr,
-               brms)
+               brms,
+               rethinking)
 
 # Plot themes
 theme_set(theme_minimal())
@@ -55,7 +56,6 @@ d <- d %>%
     PitchVariabilityTD_SD = as.numeric(PitchVariabilityTD_SD)
   ) %>% subset(!is.na(Year))
 
-d[23,1] <- "(Paul, et al., 2008)" # Fixing extra space
 ```
 
 ```{r}
@@ -64,19 +64,20 @@ d[23,1] <- "(Paul, et al., 2008)" # Fixing extra space
 # Formatting data
 long_SD <- d %>% gather(condition, SD, PitchMeanASD_SD, PitchMeanTD_SD, factor_key=TRUE) %>% select(SD)
 
-long <- d %>% mutate(PaperYear = stri_sub(Paper,-5,-2),
-                     n = c(1:nrow(d)),
+long <- d %>% mutate(n = c(1:nrow(d)),
                      direction = factor(ifelse(PitchMeanASD_Mean > PitchMeanTD_Mean, 'ASD>TD', 'ASD<TD'))) %>% 
   gather(condition, Mean, PitchMeanASD_Mean, PitchMeanTD_Mean, factor_key=TRUE) %>% 
-  mutate(condition = ifelse( condition == 'PitchMeanASD_Mean', 'ASD', 'TD'),
-         SD = long_SD$SD) 
+  mutate(Diagnosis = ifelse( condition == 'PitchMeanASD_Mean', 'ASD', 'TD'),
+         SD = long_SD$SD,
+         Mean_scale = scale(Mean)) 
 
 long1 <- long[complete.cases(long['Mean']),]
 
 d1 <- d[complete.cases(d['PitchMeanTD_Mean']),] %>% 
   mutate(n = 1:nrow(d[complete.cases(d['PitchMeanTD_Mean']),]),
          colorTD = 'TD',
-         colorASD = 'ASD')
+         colorASD = 'ASD',
+         Diff_pct = (PitchMeanASD_Mean - PitchMeanTD_Mean)/mean(PitchMeanASD_Mean+PitchMeanTD_Mean))
 
 new_labels <- as_labeller(
   c(
@@ -112,21 +113,23 @@ new_labels <- as_labeller(
 # Building plots
 
 long1 %>% 
-  ggplot(aes(x = condition)) +
+  ggplot(aes(x = Diagnosis)) +
   geom_point(aes(y = Mean, 
-                 color = direction), 
+                 color = direction,
+                 size = ifelse(Diagnosis=='ASD', ASD_N, TD_N)), 
              shape = 1) +
   geom_linerange(aes(ymin = Mean - SD, 
                      ymax = Mean + SD, 
                      color = direction)) +
-  facet_wrap(~n, 
+  facet_wrap(~ n, 
              scales = "free",
              labeller = new_labels) +
   ylab('Mean Pitch Variability') +
   xlab('Diagnosis')  +   
   scale_color_manual(values = c('ASD>TD' = 'royalblue', 
                                 'ASD<TD' = 'firebrick'),
-                     name = 'Direction of Results')
+                     name = 'Direction of Results') +
+  scale_size(name = 'Sample Size')
 
 d1 %>%  ggplot() + 
   geom_point(aes(x = n + 0.3, 
@@ -157,15 +160,6 @@ d1 %>%  ggplot() +
   scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), 
                      name = 'Diagnosis')
 
-long1 %>% 
-  ggplot(aes(x = PaperYear, y = Mean, color = condition)) +
-  geom_point(shape = 1) +
-  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'),
-                     name = 'Diagnosis') +
-  geom_linerange(aes(ymin = Mean - SD, 
-                     ymax = Mean + SD,
-                     color = condition))
-
 d1 %>% 
   ggplot() +
   geom_point(aes(x = PitchMeanTD_Mean, 
@@ -184,12 +178,36 @@ d1 %>%
   xlab('Pitch Mean') +
   ylab('Pitch SD')
 
+d1 %>% 
+  ggplot() +
+  geom_point(aes(x = Year, 
+                 y = Diff_pct, 
+                 size = TD_N + ASD_N),
+             shape = 1) +
+  geom_hline(yintercept = 0,
+             lty = 2) +
+  scale_size(name = 'Sample Size') +
+  xlab('Year of Publication') +
+  ylab('Relative Difference in Pitch Variability')
+
+long1 %>% 
+  ggplot(aes(color = Diagnosis)) +
+  geom_point(aes(x = Year, 
+                 y = Mean, 
+                 size = ifelse(Diagnosis=='ASD', ASD_N, TD_N)),
+             shape = 1) +
+  scale_size(name = 'Sample Size') +
+  xlab('Year of Publication') +
+  ylab('Scaled Mean Pitch Variability') +
+  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), name = 'Diagnosis')
+  
+
 ```
 
 
 ```{r}
 # Meta analysis using escalc
-d <- escalc(
+d_ma <- escalc(
   measure = "SMD", # stand mean diff
   n1i = TD_N,
   n2i = ASD_N,
@@ -200,14 +218,17 @@ d <- escalc(
   data = d,
   slab = Paper)
 
-d <- d %>% 
+d_ma <- d_ma %>% 
   mutate(StandardError = sqrt(vi)) %>% 
   rename(EffectSize = yi)
 
-ma_out <- rma(data = d, yi = EffectSize, vi = vi, slab = d$Paper)
+(ma_out <- rma(data = d_ma, yi = EffectSize, vi = vi, slab = d$Paper))
 
-summary(ma_out)
+forest(ma_out, slab = d_ma$Paper)
+
 ```
+
+
 
 ```{r}
 f0 <- bf(EffectSize | se(StandardError) ~ 1)
