@@ -37,7 +37,8 @@ pacman::p_load(metafor,
                stringi, 
                readr,
                brms,
-               rethinking)
+               rethinking,
+               viridis)
 
 # Plot themes
 theme_set(theme_minimal())
@@ -53,7 +54,8 @@ d <- d %>%
     PitchVariabilityASD_Mean = as.numeric(PitchVariabilityASD_Mean),
     PitchVariabilityTD_Mean = as.numeric(PitchVariabilityTD_Mean),
     PitchVariabilityASD_SD = as.numeric(PitchVariabilityASD_SD),
-    PitchVariabilityTD_SD = as.numeric(PitchVariabilityTD_SD)
+    PitchVariabilityTD_SD = as.numeric(PitchVariabilityTD_SD),
+    Paper = as.factor(Paper)
   ) %>% subset(!is.na(Year))
 
 ```
@@ -237,46 +239,103 @@ dens(d$EffectSize)
 # Forrest plot
 forest(ma_out, slab = d$Paper)
 
-# Funnel plot
+# Funnel plots
 d[complete.cases(d['EffectSize']),] %>% 
   ggplot(aes(x = EffectSize, y = StandardError)) +
-  geom_point() +
-  scale_y_reverse() 
-  scale_y_continuous(limits = c(0, max(d$StandardError))) 
+  geom_point(aes(color = Author), size = 3) +
+  geom_vline(xintercept = coef(ma_out), lty = 2) +
+  geom_abline(intercept = coef(ma_out)/2, 
+              slope = -0.5) +
+  geom_abline(intercept = -coef(ma_out)/2,
+              slope = 0.5) +
+  ylim(0.483, 0.022) +
+  xlim(coef(ma_out) - 1.1, coef(ma_out) + 1.1) +
+  geom_polygon(data=df_poly,aes(x,y),fill="blue",alpha=0.2)
 
-funnelplotdata <- funnel(ma_out)
+funnel(ma_out)
 
-# Create vector of colors
-my_colors <- c('red','blue')[(d$Paper)]
-
-length(unique(d$Paper))
-# Plot over points
-with(funnelplotdata, points(x, y, col = my_colors, pch = 19))
 ```
 
 
-
-
 ```{r}
-f0 <- bf(EffectSize | se(StandardError) ~ 0 + (1 | Paper))
+rebuild_cmdstan(
+  dir = cmdstan_path(),
+  cores = getOption("mc.cores", 2),
+  quiet = FALSE,
+  timeout = 600
+)
+
+
+# the two models
 f1 <- bf(EffectSize | se(StandardError) ~ 1 + (1 | Paper))
 
+# clean
 d_clean <- d[complete.cases(d['EffectSize']),]
 
-get_prior(f0, data = d_clean)
+d_clean$Paper <- as.factor(d_clean$Paper)
+
+# get priors
 get_prior(f1, data = d_clean)
 
+# model priors
 p0 <- c(
+  prior(normal(-0.5, 0.5), class = Intercept),
   prior(normal(0, 1), class = sd),
   prior(normal(1, 0.5), class = sd, group = Paper),
-  prior(normal(-0.5, 0.3), class = sd, coef = Intercept, group = Paper)
+  prior(normal(-0.5, 0.5), class = sd, coef = Intercept, group = Paper) # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
   )
-  
+
+p1 <- c(
+  prior(normal(-0.5, 0.5), class = Intercept),
+  prior(exp(1), class = sd),
+  prior(exp(1), class = sd, group = Paper),
+  prior(normal(-0.5, 0.5), class = sd, coef = Intercept, group = Paper) # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+  )
+
   
 p1 <- prior()
 
+m0_prior <- brm(
+  formula = f1,
+  data = d_clean,
+  family = gaussian,
+  prior = p0,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  threads = threading(2)
+)
+pp_check(m0_prior, nsamples = 100)
+
+m0 <- brm(
+  formula = f1,
+  data = d_clean,
+  family = gaussian,
+  prior = p1,
+  sample_prior = T,
+  backend = "cmdstanr",
+  threads = threading(2)
+)
+
+pp_check(m0, nsamples = 100)
+
+colnames(posterior_m0)
+
+# Sampling from the posterior
+posterior_samples(m0) %>% 
+
+# Creating a long format of the posterior to plot the different distributions together
+  pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+
+# Plotting the prior and posterior distributions
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
 
 
+
+
+
+summary(m0)
 m0 <- brm(
   formula = f1, 
   data = d, 
@@ -290,7 +349,13 @@ m1 <- brm(
   cores = 4,
   file = "m1"
 )
+
+class(d_clean$Paper)
+
+
 ```
+
+
 
 
 Step 2: Analyse pitch variability in ASD in two new studies for which you have access to all the trials (not just study level estimates)
