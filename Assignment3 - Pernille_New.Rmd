@@ -1,0 +1,346 @@
+---
+title: "Assignment 3 - Applying meta-analytic priors"
+author: "Ormo"
+date: "4/12/2021"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Assignment 3
+
+In this assignment we do the following:
+- we run a Bayesian meta-analysis of pitch variability in ASD, based on previously published literature
+- we analyze pitch variability in ASD in two new studies using both a conservative and a meta-analytic prior
+- we assess the difference in model quality and estimates using the two priors. 
+
+The questions you need to answer are: What are the consequences of using a meta-analytic prior? Evaluate the models with conservative and meta-analytic priors. Discuss the effects on estimates. Discuss the effects on model quality. Discuss the role that meta-analytic priors should have in scientific practice. Should we systematically use them? Do they have drawbacks? Should we use them to complement more conservative approaches? How does the use of meta-analytic priors you suggest reflect the skeptical and cumulative nature of science?
+
+### Step by step suggestions
+
+Step 1: Perform a meta-analysis of pitch variability from previous studies of voice in ASD
+- N.B. all you need is in the two intro videos
+- the data is available as Ass3_MetaAnalysisData.tsv
+- You should calculate Effect size (cohen's d) and Standard Error (uncertainty in the Cohen's d) per each study, using escalc() from the metafor package (also check the livecoding intro).
+- N.B. for the purpose of the assignment we're only interested in getting a meta-analytic effect size for the meta-analytic prior (and not e.g. all the stuff on publication bias). See a brms tutorial here: https://vuorre.netlify.com/post/2016/09/29/meta-analysis-is-a-special-case-of-bayesian-multilevel-modeling/ 
+The formula is EffectSize | se(StandardError) ~ 1 + (1 | Paper). Don't forget prior definition, model checking, etc.
+- N.B. the livecoding video is not perfect, you *can* (but don't have to) improve it: use a t-student likelihood, test the effects of the priors and refine them, check the robustness of results to more or less skeptical priors, etc. 
+- Write down the results of the meta-analysis in terms of a prior for step 2.
+
+
+```{r}
+# Load packages
+pacman::p_load(metafor, 
+               tidyverse, 
+               stringi, 
+               readr,
+               brms,
+               rethinking)
+
+# Plot themes
+theme_set(theme_minimal())
+
+```
+
+```{r}
+# Load the data
+d <- read.delim('Ass3_MetaAnalysisData.tsv')
+
+d <- d %>% 
+  mutate(
+    PitchVariabilityASD_Mean = as.numeric(PitchVariabilityASD_Mean),
+    PitchVariabilityTD_Mean = as.numeric(PitchVariabilityTD_Mean),
+    PitchVariabilityASD_SD = as.numeric(PitchVariabilityASD_SD),
+    PitchVariabilityTD_SD = as.numeric(PitchVariabilityTD_SD)
+  ) %>% subset(!is.na(Year))
+
+```
+
+```{r}
+# Familiarizing ourselves with the data
+
+# Formatting data
+long_SD <- d %>% gather(condition, SD, PitchMeanASD_SD, PitchMeanTD_SD, factor_key=TRUE) %>% select(SD)
+
+long <- d %>% mutate(n = c(1:nrow(d)),
+                     direction = factor(ifelse(PitchMeanASD_Mean > PitchMeanTD_Mean, 'ASD>TD', 'ASD<TD'))) %>% 
+  gather(condition, Mean, PitchMeanASD_Mean, PitchMeanTD_Mean, factor_key=TRUE) %>% 
+  mutate(Diagnosis = ifelse( condition == 'PitchMeanASD_Mean', 'ASD', 'TD'),
+         SD = long_SD$SD,
+         Mean_scale = scale(Mean)) 
+
+long1 <- long[complete.cases(long['Mean']),]
+
+d1 <- d[complete.cases(d['PitchMeanTD_Mean']),] %>% 
+  mutate(n = 1:nrow(d[complete.cases(d['PitchMeanTD_Mean']),]),
+         colorTD = 'TD',
+         colorASD = 'ASD',
+         Diff_pct = (PitchMeanASD_Mean - PitchMeanTD_Mean)/mean(PitchMeanASD_Mean+PitchMeanTD_Mean))
+
+new_labels <- as_labeller(
+  c(
+    '1' = "(Sharda, et al., 2010)",
+    '2' = "(Filipe, et al., 2014)" ,
+    '3' = "(Filipe, et al., 2014)",
+    '4' = "(Diehl, et al., 2009)",
+    '5' = "(Diehl, et al., 2009)",
+    '6' = "(Scharfstein, et al., 2011)",
+    '12' = "(Grossman, et al., 2010)",
+    '13' = "(Bonneh, et al., 2011)" ,
+    '15' = "(Nadig & Shaw, 2012)",
+    '16' = "(Nadig & Shaw, 2012)" ,
+    '21' = "(Brisson et al 2014)" ,
+    '26' = "(Chan et al 2016)" ,
+    '29' = "(Quigley et al 2016)",
+    '30' = "(Quigley et al 2016)",
+    '31' = "(Dahlgren et al 2018)" ,
+    '32' = "(Fusaroli, Lambrechts, et al., 2016)",
+    '33' = "(Fusaroli, Lambrechts, et al., 2016)",
+    '34' = "(Fusaroli, et al., 2013)",
+    '35' = "(Fusaroli, et al., 2013)",
+    '36' = "(Fusaroli, et al., 2013)",
+    '37' = "(Fusaroli, Grossman, et al., 2015)",
+    '38' = "(Fusaroli, Grossman, et al., 2015)",
+    '39' = "(Fusaroli, Grossman, et al., 2015)",
+    '40' = "(Hubbard, et al., 2017)",
+    '41' = "(Seidl et al., 2018)"
+  )
+)
+
+
+# Building plots
+
+long1 %>% 
+  ggplot(aes(x = Diagnosis)) +
+  geom_point(aes(y = Mean, 
+                 color = direction,
+                 size = ifelse(Diagnosis=='ASD', ASD_N, TD_N)), 
+             shape = 1) +
+  geom_linerange(aes(ymin = Mean - SD, 
+                     ymax = Mean + SD, 
+                     color = direction)) +
+  facet_wrap(~ n, 
+             scales = "free",
+             labeller = new_labels) +
+  ylab('Mean Pitch Variability') +
+  xlab('Diagnosis')  +   
+  scale_color_manual(values = c('ASD>TD' = 'royalblue', 
+                                'ASD<TD' = 'firebrick'),
+                     name = 'Direction of Results') +
+  scale_size(name = 'Sample Size')
+
+d1 %>%  ggplot() + 
+  geom_point(aes(x = n + 0.3, 
+                 y = PitchMeanTD_Mean,
+                 color = colorTD)) +
+  geom_linerange(aes(x = n + 0.3,
+                     ymin = PitchMeanTD_Mean - PitchMeanTD_SD, 
+                     ymax = PitchMeanTD_Mean + PitchMeanTD_SD,
+                     color = colorTD)) +
+  geom_point(aes(x = n,
+                 y = PitchMeanASD_Mean,
+                 color = colorASD), 
+             shape = 1) +
+  geom_linerange(aes(x = n,
+                     ymin = PitchMeanASD_Mean - PitchMeanASD_SD, 
+                     ymax = PitchMeanASD_Mean + PitchMeanASD_SD,
+                     color = colorASD)) +
+  geom_vline(xintercept = c(1:nrow(d1) + 0.65), alpha = 0.3) +
+  geom_vline(xintercept = nrow(d1) + 0.59) +
+  # geom_hline(yintercept = (mean(d1$PitchMeanTD_Mean) +
+  #                          mean(d1$PitchMeanASD_Mean))/2, lty = 2) +
+  scale_x_discrete(limits = factor(1:nrow(d1)), 
+                   name = 'Study',
+                   labels = d1$Paper) +
+  theme_classic() + 
+  ylab('Mean Pitch Variability') +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), 
+                     name = 'Diagnosis')
+
+d1 %>% 
+  ggplot() +
+  geom_point(aes(x = PitchMeanTD_Mean, 
+                 y = PitchMeanTD_SD, 
+                 color = colorTD,
+                 size = TD_N), 
+             shape = 1) +
+  geom_point(aes(x = PitchMeanASD_Mean,
+                 y = PitchMeanASD_SD,
+                 color = colorASD,
+                 size = ASD_N),
+             shape = 1) +
+  scale_size(name = 'Sample Size') +
+  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'),
+                     name = 'Diagnosis') +
+  xlab('Pitch Mean') +
+  ylab('Pitch SD')
+
+d1 %>% 
+  ggplot() +
+  geom_point(aes(x = Year, 
+                 y = Diff_pct, 
+                 size = TD_N + ASD_N),
+             shape = 1) +
+  geom_hline(yintercept = 0,
+             lty = 2) +
+  scale_size(name = 'Sample Size') +
+  xlab('Year of Publication') +
+  ylab('Relative Difference in Pitch Variability')
+
+long1 %>% 
+  ggplot(aes(color = Diagnosis)) +
+  geom_point(aes(x = Year, 
+                 y = Mean, 
+                 size = ifelse(Diagnosis=='ASD', ASD_N, TD_N)),
+             shape = 1) +
+  scale_size(name = 'Sample Size') +
+  xlab('Year of Publication') +
+  ylab('Scaled Mean Pitch Variability') +
+  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), name = 'Diagnosis')
+  
+
+```
+
+
+```{r}
+# Meta analysis using escalc
+d <- escalc(
+  measure = "SMD", # stand mean diff
+  n1i = TD_N,
+  n2i = ASD_N,
+  m1i = PitchVariabilityTD_Mean,
+  m2i = PitchVariabilityASD_Mean,
+  sd1i = PitchVariabilityTD_SD,
+  sd2i = PitchVariabilityASD_SD,
+  data = d,
+  slab = Paper)
+
+d <- d %>% 
+  mutate(StandardError = sqrt(vi)) %>% 
+  rename(EffectSize = yi)
+
+(ma_out <- rma(data = d, yi = EffectSize, vi = vi, slab = d$Paper))
+
+summary(d$StandardError, na.rm = T)
+
+summary(d$EffectSize, na.rm = T)
+
+dens(d$EffectSize)
+```
+
+```{r}
+# Plots of meta-analysis
+
+# Forrest plot
+forest(ma_out, slab = d$Paper)
+
+# Funnel plot
+d[complete.cases(d['EffectSize']),] %>% 
+  ggplot(aes(x = EffectSize, y = StandardError)) +
+  geom_point() +
+  scale_y_reverse() 
+  scale_y_continuous(limits = c(0, max(d$StandardError))) 
+
+funnelplotdata <- funnel(ma_out)
+
+# Create vector of colors
+my_colors <- c('red','blue')[(d$Paper)]
+
+length(unique(d$Paper))
+# Plot over points
+with(funnelplotdata, points(x, y, col = my_colors, pch = 19))
+```
+
+
+
+
+```{r}
+# the two models
+f0 <- bf(EffectSize | se(StandardError) ~ 0 + (1 | Paper))
+f1 <- bf(EffectSize | se(StandardError) ~ 1 + (1 | Paper))
+
+# clean
+d_clean <- d[complete.cases(d['EffectSize']),]
+
+# get priors
+get_prior(f0, data = d_clean)
+get_prior(f1, data = d_clean)
+
+# null model priors - trying with gaussians / students t
+p0 <- c(
+  #prior(normal(0, 1), class = sd),
+  #prior(normal(1, 0.5), class = sd, group = Paper),
+  prior(normal(-0.5, 0.5), class = sd, coef = Intercept, group = Paper) # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+  )
+
+p0 <- c(
+  prior(exp(1), class = sd),
+  prior(exp(1), class = sd, group = Paper),
+  prior(normal(-0.5, 0.5), class = sd, coef = Intercept, group = Paper) # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+  )
+  
+  
+p1 <- prior()
+
+m0_prior <- brm(
+  formula = f0,
+  data = d_clean,
+  family = gaussian,
+  prior = p0,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  threads = threading(2)
+)
+
+m0 <- brm(
+  formula = f1, 
+  data = d, 
+  cores = 4,
+  file = "m1"
+)
+
+m1 <- brm(
+  formula = f1, 
+  data = d, 
+  cores = 4,
+  file = "m1"
+)
+```
+
+
+Step 2: Analyse pitch variability in ASD in two new studies for which you have access to all the trials (not just study level estimates)
+- the data is available as Ass3_data.csv. Notice there are 2 studies (language us, and language dk), multiple trials per participant, and a few different ways to measure pitch variability (if in doubt, focus on pitch IQR, interquartile range of the log of fundamental frequency)
+- Also, let's standardize the data, so that they are compatible with our meta-analytic prior (Cohen's d is measured in SDs).
+- Is there any structure in the dataset that we should account for with random/varying effects? How would you implement that? Or, if you don't know how to do bayesian random/varying effects or don't want to bother, is there anything we would need to simplify in the dataset?
+
+Step 3: Build a regression model predicting Pitch variability from Diagnosis.
+- how is the outcome distributed? (likelihood function). NB. given we are standardizing, and the meta-analysis is on that scale, gaussian is not a bad assumption, but check t-student as well. Lognormal would require us to convert the prior to that scale.
+- how are the parameters of the likelihood distribution distributed? Which predictors should they be conditioned on? Start simple, with Diagnosis only. Add other predictors only if you have the time and energy!
+- use a skeptical/conservative prior for the effects of diagnosis. Remember you'll need to motivate it, test its predictions (prior predictive checks), its impact on the posteriors (prior posterior updates checks).
+- Evaluate model quality. Describe and plot the estimates. 
+
+Step 4: Now re-run the model with the meta-analytic prior
+- Evaluate model quality. Describe and plot the estimates. 
+- N.B. you need to assess the meta-analytic informed prior (prior pred checks, prior-posterior update checks) and if relevant you can always change it in motivated ways (e.g. too confident, doesn't let the model actually learn from the data, so increase sd)
+
+Step 5: Compare the models
+- Plot priors and posteriors of the diagnosis effect in both models
+- Compare posteriors between the two models
+- Compare the two models (LOO)
+- Discuss how they compare and whether any of them is best.
+
+Step 6: Prepare a nice write up of the analysis and answer the questions at the top.
+
+Optional step 7: how skeptical should a prior be?
+- Try different levels of skepticism and compare them both plotting the impact on the inferred effect size and using LOO.
+
+Optional step 8: Include other predictors
+- Do age, gender and education improve the model?
+- Should they be main effects or interactions?
+
+Optional step 9: generalized linear models
+- If you wanted to preserve the lognormal distribution of the pitch variability, what would 

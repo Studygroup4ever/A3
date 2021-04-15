@@ -31,7 +31,6 @@ The formula is EffectSize | se(StandardError) ~ 1 + (1 | Paper). Don't forget pr
 - Write down the results of the meta-analysis in terms of a prior for step 2.
 
 
-
 ```{r}
 # setup
 pacman::p_load(readr,
@@ -98,7 +97,6 @@ MA_m0 <- brm(
   cores = 2
 )
 
-
 pp_check(MA_m0, nsamples = 100)
 
 MA_m1 <- brm(
@@ -126,6 +124,10 @@ MA_se <- fixef(MA_m1)[[2]]
 # IKKE SÅDAN: MA_heterogeneity = sd(ranef(MA_m1)$Population[,, "Intercept"][,1])
 MA_heterogeneity = 0.32 
 
+#You should get a .4 cohens d different.Wehich means that if you knew the pitch of a person, then you would know whetehr theyre autist or not with a 60% probability of superiority. So if you sample a participant from the higher distribution.
+```
+
+```{r}
 
 ```
 
