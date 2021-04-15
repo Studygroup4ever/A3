@@ -281,22 +281,17 @@ get_prior(f1, data = d_clean)
 
 # model priors
 p1 <- c(
-  prior(normal(-0.5, 0.5), class = Intercept),
-  prior(exp(1), class = sd, group = Paper),
-  prior(normal(0.5, 0.25), class = sd, coef = Intercept, group = Paper) # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+  prior(normal(-0.5, 0.5), class = Intercept), # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+  prior(exponential(1), class = sd, group = Paper)
   )
 
 p1_stud <- c(
   prior(student_t(3, -0.5, 0.5), class = Intercept), # Prior for intercept
-  prior(exp(1), class = sd, group = Paper), # Prior for sd between papers
-  prior(normal(0.5, 0.25), class = sd, coef = Intercept, group = Paper) # Prior for sd for intercept between papers
+  prior(exponential(1), class = sd, group = Paper) # Prior for sd between papers
   )
 
 
 ```
-
-
-
 
 ```{r}
 # Building model normal
@@ -352,56 +347,49 @@ m1_stud <- brm(
 
 pp_poststud <- pp_check(m1_stud, nsamples = 100)
 
-pp_priornorm + pp_postnorm + pp_priorstud + pp_poststud
+pp_priornorm 
+pp_postnorm
+pp_priorstud 
+pp_poststud
 ```
 
 
 ```{r}
-# checking models
-
-
+# checking model
 
 colnames(posterior_m0)
 
 # Sampling from the posterior
-posterior_m0 <- posterior_samples(m0) 
+posterior_m1 <- posterior_samples(m1) 
+posterior_m1_stud <- posterior_samples(m1_stud) 
 
 # Creating a long format of the posterior to plot the different distributions together
-posterior_m0 %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
-
-# Plotting the prior and posterior distributions
+posterior_m1 %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()
 
-posterior_m0 %>% 
+posterior_m1_stud %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
 
-# Creating a long format of the posterior to plot the different distributions together
-  pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper__Intercept), names_to = "Estimates") %>%
+posterior_m1 %>% 
+  pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
 
-# Plotting the prior and posterior distributions
+posterior_m1_stud %>% 
+  pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()
 
 
+summary(m1)
+summary(m1_stud)
 
-summary(m0)
-m0 <- brm(
-  formula = f1, 
-  data = d, 
-  cores = 4,
-  file = "m1"
-)
-
-m1 <- brm(
-  formula = f1, 
-  data = d, 
-  cores = 4,
-  file = "m1"
-)
-
-class(d_clean$Paper)
 
 
 ```
