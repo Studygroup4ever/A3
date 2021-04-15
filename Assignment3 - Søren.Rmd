@@ -207,7 +207,7 @@ long1 %>%
 
 ```{r}
 # Meta analysis using escalc
-d_ma <- escalc(
+d <- escalc(
   measure = "SMD", # stand mean diff
   n1i = TD_N,
   n2i = ASD_N,
@@ -218,27 +218,71 @@ d_ma <- escalc(
   data = d,
   slab = Paper)
 
-d_ma <- d_ma %>% 
+d <- d %>% 
   mutate(StandardError = sqrt(vi)) %>% 
   rename(EffectSize = yi)
 
-(ma_out <- rma(data = d_ma, yi = EffectSize, vi = vi, slab = d$Paper))
+(ma_out <- rma(data = d, yi = EffectSize, vi = vi, slab = d$Paper))
 
-forest(ma_out, slab = d_ma$Paper)
+summary(d$StandardError, na.rm = T)
 
+summary(d$EffectSize, na.rm = T)
+
+dens(d$EffectSize)
+```
+
+```{r}
+# Plots of meta-analysis
+
+# Forrest plot
+forest(ma_out, slab = d$Paper)
+
+# Funnel plot
+d[complete.cases(d['EffectSize']),] %>% 
+  ggplot(aes(x = EffectSize, y = StandardError)) +
+  geom_point() +
+  scale_y_reverse() 
+  scale_y_continuous(limits = c(0, max(d$StandardError))) 
+
+funnelplotdata <- funnel(ma_out)
+
+# Create vector of colors
+my_colors <- c('red','blue')[(d$Paper)]
+
+length(unique(d$Paper))
+# Plot over points
+with(funnelplotdata, points(x, y, col = my_colors, pch = 19))
 ```
 
 
 
+
 ```{r}
-f0 <- bf(EffectSize | se(StandardError) ~ 1)
+f0 <- bf(EffectSize | se(StandardError) ~ 0 + (1 | Paper))
 f1 <- bf(EffectSize | se(StandardError) ~ 1 + (1 | Paper))
 
-get_prior(f0, data = d)
-get_prior(f1, data = d)
+d_clean <- d[complete.cases(d['EffectSize']),]
 
-p0 <- prior()
+get_prior(f0, data = d_clean)
+get_prior(f1, data = d_clean)
+
+p0 <- c(
+  prior(normal(0, 1), class = sd),
+  prior(normal(1, 0.5), class = sd, group = Paper),
+  prior(normal(-0.5, 0.3), class = sd, coef = Intercept, group = Paper)
+  )
+  
+  
 p1 <- prior()
+
+
+
+m0 <- brm(
+  formula = f1, 
+  data = d, 
+  cores = 4,
+  file = "m1"
+)
 
 m1 <- brm(
   formula = f1, 
