@@ -3,6 +3,8 @@ title: "Assignment 3 - Applying meta-analytic priors"
 author: "Ormo"
 date: "4/12/2021"
 output: html_document
+editor_options: 
+  chunk_output_type: inline
 ---
 
 
@@ -281,15 +283,14 @@ get_prior(f1, data = d_clean)
 
 # model priors
 p1 <- c(
-  prior(normal(-0.5, 0.5), class = Intercept), # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+  prior(normal(-0.5, 0.25), class = Intercept), # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
   prior(exponential(1), class = sd, group = Paper)
   )
 
 p1_stud <- c(
-  prior(student_t(3, -0.5, 0.5), class = Intercept), # Prior for intercept
+  prior(student_t(3, -0.5, 0.25), class = Intercept), # Prior for intercept
   prior(exponential(1), class = sd, group = Paper) # Prior for sd between papers
   )
-
 
 ```
 
@@ -305,6 +306,7 @@ m1_prior <- brm(
   threads = threading(2),
   core = 2
 )
+set.seed(123)
 pp_priornorm <- pp_check(m1_prior, nsamples = 100)
 
 m1 <- brm(
@@ -347,17 +349,19 @@ m1_stud <- brm(
 
 pp_poststud <- pp_check(m1_stud, nsamples = 100)
 
-pp_priornorm 
-pp_postnorm
-pp_priorstud 
-pp_poststud
+pp_priornorm+ggtitle("Prior predictive check
+Effectsize, Intercept modelled w. Gaussian/Normal prior")
+pp_postnorm+ggtitle("Posterior predictive check
+Effectsize, Intercept modelled w. Gaussian/Normal prior")
+pp_priorstud+ggtitle("Prior predictive check
+Effectsize, Intercept modelled w. Student's T prior")
+pp_poststud+ggtitle("Posterior predictive check
+Effectsize, Intercept modelled w. Student's T prior")
 ```
 
 
 ```{r}
 # checking model
-
-colnames(posterior_m0)
 
 # Sampling from the posterior
 posterior_m1 <- posterior_samples(m1) 
@@ -367,31 +371,118 @@ posterior_m1_stud <- posterior_samples(m1_stud)
 posterior_m1 %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
-  theme_minimal()
+  theme_minimal()+
+  ggtitle("Posterior learning plot - Model w. Normal_Int")
 
 posterior_m1_stud %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
-  theme_minimal()
+  theme_minimal()+
+  ggtitle("Posterior learning plot - Model w. Students_Int")
 
 posterior_m1 %>% 
   pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
-  theme_minimal()
+  theme_minimal()+
+  ggtitle("SD: Posterior learning plot - Model w. Normal_Int")
 
 posterior_m1_stud %>% 
   pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
-  theme_minimal()
-
+  theme_minimal()+
+  ggtitle("SD: Posterior learning plot - Model w. Students_Int")
 
 summary(m1)
 summary(m1_stud)
+```
 
+# Model comparison
 
+```{r}
+m1 <- add_criterion(m1,criterion = c("bayes_R2", "loo"))
+m1_stud <- add_criterion(m1_stud,criterion = c("bayes_R2", "loo"))
 
+loo_compare(m1, m1_stud)
+loo_model_weights(m1, m1_stud)
+
+# Where are the influential points
+library(loo)
+
+loo(m1) %>% 
+  pareto_k_ids(threshold = 0.7) # 3 observation; 
+
+loo(m1_stud) %>% 
+  pareto_k_ids(threshold = 0.7) # 2 
+
+# Access the rows directly with the slice() 
+
+# For Model 1 (m1)
+d %>% 
+  slice(6) %>% 
+  select(Paper,
+         Author,
+         Year,
+         Population, 
+         EffectSize,
+         Language
+         ) # positive effect size
+d %>% 
+  slice(20) %>% 
+  select(Paper,
+         Author,
+         Year,
+         Population, 
+         EffectSize,
+         Language
+         ) # NA effect size
+d %>% 
+  slice(30) %>% 
+  select(Paper,
+         Author,
+         Year,
+         Population, 
+         EffectSize,
+         Language
+         ) # negative effect size
+
+# For Model 2 (m1_stud)
+d %>% 
+  slice(16) %>% 
+  select(Paper,
+         Author,
+         Year,
+         Population, 
+         EffectSize,
+         Language
+         ) # negative effect size
+d %>% 
+  slice(17) %>% 
+  select(Paper,
+         Author,
+         Year,
+         Population, 
+         EffectSize,
+         Language
+         ) # NA effect size
+Effectsize
+# Trying to plot it
+d$EffectSize
+# Model 1
+tibble(pareto_k = m1$criteria$loo$diagnostics$pareto_k,
+       p_loo   = m1$criteria$loo$pointwise[, "p_loo"],
+       EffectSize      = pull(d, EffectSize)) %>% 
+  ggplot(aes(x = pareto_k, y = p_loo, color = EffectSize == "Paper")) +
+  #geom_vline(xintercept = .5, linetype = 2, color = "black", alpha = 1/2) +
+  geom_point(aes(shape = EffectSize == "Paper")) # +
+  # geom_text(data = . %>% filter(p_loo > 0.7),
+  #           aes(x = pareto_k - 0.03, label = Paper),
+  #           hjust = 1) +
+  # scale_color_manual(values = carto_pal(7, "BurgYl")[c(5, 7)]) +
+  # scale_shape_manual(values = c(1, 19)) +
+  # labs(subtitle = "text") +
+  # theme(legend.position = "none")
 ```
 
 

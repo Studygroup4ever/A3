@@ -256,8 +256,6 @@ with(funnelplotdata, points(x, y, col = my_colors, pch = 19))
 ```
 
 
-
-
 ```{r}
 # the two models
 f0 <- bf(EffectSize | se(StandardError) ~ 0 + (1 | Paper))
