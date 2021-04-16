@@ -202,7 +202,7 @@ long1 %>%
   ylab('Scaled Mean Pitch Variability') +
   scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), name = 'Diagnosis')
   
-
+?student
 ```
 
 
@@ -309,6 +309,7 @@ m1 <- brm(
   cores = 4,
   file = "m1"
 )
+??student
 ```
 
 
