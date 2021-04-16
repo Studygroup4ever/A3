@@ -303,7 +303,8 @@ m1_prior <- brm(
   sample_prior = "only",
   backend = "cmdstanr",
   threads = threading(2),
-  core = 2
+  core = 2,
+  file = 'm1_prior'
 )
 pp_priornorm <- pp_check(m1_prior, nsamples = 100)
 
@@ -315,7 +316,8 @@ m1 <- brm(
   sample_prior = T,
   backend = "cmdstanr",
   threads = threading(2),
-  core = 2
+  core = 2,
+  file = "m1"
 )
 
 pp_postnorm <- pp_check(m1, nsamples = 100)
@@ -329,7 +331,8 @@ m1_stud_prior <- brm(
   sample_prior = "only",
   backend = "cmdstanr",
   threads = threading(2),
-  core = 2
+  core = 2,
+  file = "m1_stud_prior"
 )
 
 pp_priorstud <- pp_check(m1_stud_prior, nsamples = 100)
@@ -342,7 +345,8 @@ m1_stud <- brm(
   sample_prior = T,
   backend = "cmdstanr",
   threads = threading(2),
-  core = 2
+  core = 2,
+  file = "m1_stud_prior"
 )
 
 pp_poststud <- pp_check(m1_stud, nsamples = 100)
@@ -357,34 +361,33 @@ pp_poststud
 ```{r}
 # checking model
 
-colnames(posterior_m0)
 
 # Sampling from the posterior
 posterior_m1 <- posterior_samples(m1) 
 posterior_m1_stud <- posterior_samples(m1_stud) 
 
 # Creating a long format of the posterior to plot the different distributions together
-posterior_m1 %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+inter_plot <- function(df){
+  df %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()
+}
 
-posterior_m1_stud %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
-  ggplot(aes(fill = Estimates)) +
-  geom_density(aes(value), alpha = 0.3) +
-  theme_minimal()
-
-posterior_m1 %>% 
+sd_plot <- function(df){
+  df %>% 
   pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()
+}
 
-posterior_m1_stud %>% 
-  pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
-  ggplot(aes(fill = Estimates)) +
-  geom_density(aes(value), alpha = 0.3) +
-  theme_minimal()
+
+inter_plot(posterior_m1)
+sd_plot(posterior_m1)
+
+inter_plot(posterior_m1_stud)
+sd_plot(posterior_m1_stud)
 
 
 summary(m1)
