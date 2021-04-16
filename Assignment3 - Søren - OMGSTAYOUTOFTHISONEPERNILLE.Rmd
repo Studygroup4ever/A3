@@ -240,11 +240,11 @@ dens(d$EffectSize)
 forest(ma_out, slab = d$Paper)
 
 # Funnel plots
-d[complete.cases(d['EffectSize']),] %>%
+d[complete.cases(d['EffectSize']),] %>% 
   ggplot(aes(x = EffectSize, y = StandardError)) +
   geom_point(aes(color = Author), size = 3) +
   geom_vline(xintercept = coef(ma_out), lty = 2) +
-  geom_abline(intercept = coef(ma_out)/2,
+  geom_abline(intercept = coef(ma_out)/2, 
               slope = -0.5) +
   geom_abline(intercept = -coef(ma_out)/2,
               slope = 0.5) +
