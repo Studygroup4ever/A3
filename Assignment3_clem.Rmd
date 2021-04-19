@@ -95,7 +95,8 @@ MA_m0 <- brm(
   prior = MA_prior,
   sample_prior = "only",
   chains = 2,
-  cores = 2
+  cores = 2,
+  file = "MA_m0"
 )
 
 
@@ -108,7 +109,8 @@ MA_m1 <- brm(
   prior = MA_prior,
   sample_prior = T,
   chains = 2,
-  cores = 2
+  cores = 2,
+  file = "MA_m1"
 )
 
 
@@ -224,7 +226,8 @@ ass_m0_prior <- brm(
   chains = 2,
   cores = 2,
   backend="cmdstanr",
-  threads = threading(2)
+  threads = threading(2),
+  file = "ass_m0_prior"
 )
 
 pp_check(ass_m0_prior, nsamples = 100)
@@ -238,7 +241,8 @@ ass_m0_post <- brm(
   chains = 2,
   cores = 2,
   backend="cmdstanr",
-  threads = threading(2)
+  threads = threading(2),
+  file = "ass_m0_post"
 )
 
 pp_check(ass_m0_post, nsamples = 100)
@@ -276,7 +280,7 @@ get_prior(ass_f1, data = ass3, family = gaussian())
 
 ass_f1_prior <- c(
   prior(normal(0, 1), class = Intercept),
-  prior(normal(0, 0.5), class = b),
+  prior(normal(0, 0.3), class = b),
   prior(normal(0, 0.3), class = sd, group = Language:ID),
   prior(normal(0, 0.3), class = sd, coef = Intercept, group = Language:ID),
   prior(exponential(1), class = sigma)
@@ -291,10 +295,11 @@ ass_m1_prior <- brm(
   chains = 2,
   cores = 2,
   backend="cmdstanr",
-  threads = threading(2)
+  threads = threading(2),
+  file = "ass_m1_prior"
 )
 
-pp_check(ass_m1_prior, nsamples = 100) #Looks not toooo bad
+pp_check(ass_m1_prior, nsamples = 50) #Looks not toooo bad
 
 ass_m1_post <- brm(
   ass_f1,
@@ -305,71 +310,160 @@ ass_m1_post <- brm(
   chains = 2,
   cores = 2,
   backend="cmdstanr",
-  threads = threading(2)
+  threads = threading(2),
+  file = "ass_m1_post"
 )
 # Warning message:
 # The global prior 'normal(0, 0.3)' of class 'sd' will not be used in the model as all related coefficients have individual priors already. If you did not set those priors yourself, then maybe brms has assigned default priors. See ?set_prior and ?get_prior for more details.
 
-pp_check(ass_m1_post, nsamples = 100)
+pp_check(ass_m1_post, nsamples = 50)
 
 conditional_effects(ass_m1_post) #Now the difference doesn't seem too certain
 
+posterior_gauss <- posterior_samples(ass_m1_post)
+View(posterior_gauss)
+
+ggplot(posterior_gauss) + #plotting the intercept prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_Intercept), fill="red", alpha=0.3) +
+  geom_density(aes(Intercept), fill="blue", alpha=0.5)
+
+ggplot(posterior_gauss) + #Plotting the beta prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_b), fill="red", alpha=0.3) +
+  geom_density(aes(b_DiagnosisTD), fill="blue", alpha=0.5)
+
+ggplot(posterior_gauss) + #Plotting the sigma prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_sigma), fill="red", alpha=0.3) +
+  geom_density(aes(sigma), fill="blue", alpha=0.5)
 
 
+####STUDENT T####
+#################
+ass_f1_student <- bf(IQR_z ~ Diagnosis + (1|Language) + (1|ID))
 
+get_prior(ass_f1_student, data = ass3, family = student())
 
-
-
-
-
-#####
-#Trying only with Language as varying effect
-ass_f2 <- bf(IQR_z ~ Diagnosis + (1|Language))
-
-get_prior(ass_f2, data = ass3, family = gaussian())
-
-ass_f2_prior <- c(
+ass_f1_student_prior <- c(
   prior(normal(0, 1), class = Intercept),
-  prior(normal(0, 0.5), class = b),
-  prior(normal(0, 0.3), class = sd, coef = Intercept, group = Language),
+  prior(normal(0, 0.3), class = b),
+  prior(gamma(2,0.1), class = nu),
+  prior(normal(0, 0.3), class = sd, group = Language:ID),
   prior(exponential(1), class = sigma)
 )
 
-ass_m2_prior <- brm(
-  ass_f2,
+ass_m1_student_prior <- brm(
+  ass_f1_student,
   data = ass3,
-  family = gaussian(),
-  prior = ass_f1_prior,
+  family = student(),
+  prior = ass_f1_student_prior,
   sample_prior = "only",
   chains = 2,
   cores = 2,
   backend="cmdstanr",
-  threads = threading(2)
+  threads = threading(2),
+  file = "ass_m1_student_prior"
 )
 
-pp_check(ass_m2_prior, nsamples = 100) #Looks not toooo bad
+pp_check(ass_m1_student_prior, nsamples = 50) #Looks not toooo bad
 
-ass_m2_post <- brm(
-  ass_f2,
+ass_m1_student_post <- brm(
+  ass_f1_student,
   data = ass3,
-  family = gaussian(),
-  prior = ass_f2_prior,
+  family = student(),
+  prior = ass_f1_student_prior,
   sample_prior = T,
   chains = 2,
   cores = 2,
   backend="cmdstanr",
-  threads = threading(2)
+  threads = threading(2),
+  file = "ass_m1_student_post"
 )
 
-pp_check(ass_m2_post, nsamples = 100)
+pp_check(ass_m1_student_post, nsamples = 50)
 
-conditional_effects(ass_m2_post) #Looks garbage and not theoretically valid without random effect for ID
+conditional_effects(ass_m1_student_post)
+
+posterior_student <- posterior_samples(ass_m1_student_post)
+View(posterior_student)
+
+
+ggplot(posterior_student) + #plotting the intercept prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_Intercept), fill="red", alpha=0.3) +
+  geom_density(aes(Intercept), fill="blue", alpha=0.5)
+
+ggplot(posterior_student) + #Plotting the beta prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_b), fill="red", alpha=0.3) +
+  geom_density(aes(b_DiagnosisTD), fill="blue", alpha=0.5)
+
+ggplot(posterior_student) + #Plotting the sigma prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_sigma), fill="red", alpha=0.3) +
+  geom_density(aes(sigma), fill="blue", alpha=0.5)
+
+
+
+# #####
+# #Trying only with Language as varying effect
+# ass_f2 <- bf(IQR_z ~ Diagnosis + (1|Language))
+# 
+# get_prior(ass_f2, data = ass3, family = gaussian())
+# 
+# ass_f2_prior <- c(
+#   prior(normal(0, 1), class = Intercept),
+#   prior(normal(0, 0.5), class = b),
+#   prior(normal(0, 0.3), class = sd, coef = Intercept, group = Language),
+#   prior(exponential(1), class = sigma)
+# )
+# 
+# ass_m2_prior <- brm(
+#   ass_f2,
+#   data = ass3,
+#   family = gaussian(),
+#   prior = ass_f1_prior,
+#   sample_prior = "only",
+#   chains = 2,
+#   cores = 2,
+#   backend="cmdstanr",
+#   threads = threading(2),
+#   file = "ass_m2_prior"
+# )
+# 
+# pp_check(ass_m2_prior, nsamples = 100) #Looks not toooo bad
+# 
+# ass_m2_post <- brm(
+#   ass_f2,
+#   data = ass3,
+#   family = gaussian(),
+#   prior = ass_f2_prior,
+#   sample_prior = T,
+#   chains = 2,
+#   cores = 2,
+#   backend="cmdstanr",
+#   threads = threading(2),
+#   file = "ass_m2_prior"
+# )
+# 
+# pp_check(ass_m2_post, nsamples = 100)
+# 
+# conditional_effects(ass_m2_post) #Looks garbage and not theoretically valid without random effect for ID
 ```
 
 Step 4: Now re-run the model with the meta-analytic prior
 - Evaluate model quality. Describe and plot the estimates. 
 - N.B. you need to assess the meta-analytic informed prior (prior pred checks, prior-posterior update checks) and if relevant you can always change it in motivated ways (e.g. too confident, doesn't let the model actually learn from the data, so increase sd)
 
+```{r}
+
+
+
+
+
+
+```
 
 
 Step 5: Compare the models
