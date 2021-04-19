@@ -279,7 +279,7 @@ d_clean$Paper <- as.factor(d_clean$Paper)
 f1 <- bf(EffectSize | se(StandardError) ~ 1 + (1 | Paper))
 
 # get priors
-get_prior(f1, data = d_clean)
+get_prior(f1, data = d_clean, family = student)
 
 # model priors
 p1 <- c(
@@ -289,8 +289,15 @@ p1 <- c(
 
 p1_stud <- c(
   prior(student_t(3, -0.5, 0.25), class = Intercept), # Prior for intercept
-  prior(exponential(1), class = sd, group = Paper) # Prior for sd between papers
-  )
+  prior(exponential(1), class = sd, group = Paper),# Prior for sd between papers
+  prior(normal(0,10), class = nu)
+)
+p1_stud_gamma <- c(
+  prior(student_t(3, -0.5, 0.25), class = Intercept), # Prior for intercept
+  prior(exponential(1), class = sd, group = Paper),# Prior for sd between papers
+  prior(gamma(2,0.1), class = nu)
+)
+
 
 ```
 
@@ -347,7 +354,24 @@ m1_stud <- brm(
   core = 2
 )
 
+
+m1_stud_gamma <- brm(
+  formula = f1,
+  data = d_clean,
+  family = student,
+  prior = p1_stud_gamma,
+  sample_prior = T,
+  backend = "cmdstanr",
+  threads = threading(2),
+  core = 2
+)
+
+
 pp_poststud <- pp_check(m1_stud, nsamples = 100)
+pp_poststud_gamma <- pp_check(m1_stud_gamma, nsamples = 100)
+
+pp_poststud+title("normal")
+pp_poststud_gamma+title("gamma")
 
 pp_priornorm+ggtitle("Prior predictive check
 Effectsize, Intercept modelled w. Gaussian/Normal prior")
@@ -366,34 +390,56 @@ Effectsize, Intercept modelled w. Student's T prior")
 # Sampling from the posterior
 posterior_m1 <- posterior_samples(m1) 
 posterior_m1_stud <- posterior_samples(m1_stud) 
+posterior_m1_stud_normalnu <- posterior_samples(m1_stud) 
+
 
 # Creating a long format of the posterior to plot the different distributions together
 posterior_m1 %>% pivot_longer(c(prior_Intercept,Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()+
-  ggtitle("Posterior learning plot - Model w. Normal_Int")
+  ggtitle("Posterior learning plot - Model w. Normal_Int")+
+  scale_fill_manual(values = c('prior_Intercept' = 'royalblue', 'Intercept' = 'firebrick'), name = 'Estimates')
 
 posterior_m1_stud %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()+
-  ggtitle("Posterior learning plot - Model w. Students_Int")
+  ggtitle("Posterior learning plot - Model w. Students_Int")+
+  scale_fill_manual(values = c('prior_Intercept' = 'royalblue', 'Intercept' = 'firebrick'), name = 'Estimates')
 
 posterior_m1 %>% 
   pivot_longer(c(prior_sd_Paper,sd_Paper__Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()+
-  ggtitle("SD: Posterior learning plot - Model w. Normal_Int")
+  ggtitle("SD: Posterior learning plot - Model w. Normal_Int")+
+  scale_fill_manual(values = c('prior_sd_Paper' = 'royalblue', 'sd_Paper__Intercept' = 'firebrick'), name = 'Estimates')
 
 posterior_m1_stud %>% 
   pivot_longer(c(prior_sd_Paper,sd_Paper__Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()+
-  ggtitle("SD: Posterior learning plot - Model w. Students_Int")
+  ggtitle("SD: Posterior learning plot - Model w. Students_Int")+
+  scale_fill_manual(values = c('prior_sd_Paper' = 'royalblue', 'sd_Paper__Intercept' = 'firebrick'), name = 'Estimates')
 
+
+posterior_m1_stud %>% 
+  pivot_longer(c(prior_nu,nu), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("SD: Posterior learning plot - Model w. Students_Int")+
+  scale_fill_manual(values = c('prior_nu' = 'royalblue', 'nu' = 'firebrick'), name = 'Estimates')
+
+posterior_m1_stud_normalnu %>% 
+  pivot_longer(c(prior_nu,nu), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("SD: Posterior learning plot - Model w. Students_Int")+
+  scale_fill_manual(values = c('prior_nu' = 'royalblue', 'nu' = 'firebrick'), name = 'Estimates')
 
 # checking rhat/tail/ess/bulk
 summary(m1)
