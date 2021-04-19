@@ -3,6 +3,8 @@ title: "Assignment 3 - Applying meta-analytic priors"
 author: "Ormo"
 date: "4/12/2021"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 
@@ -25,8 +27,7 @@ Step 1: Perform a meta-analysis of pitch variability from previous studies of vo
 - N.B. all you need is in the two intro videos
 - the data is available as Ass3_MetaAnalysisData.tsv
 - You should calculate Effect size (cohen's d) and Standard Error (uncertainty in the Cohen's d) per each study, using escalc() from the metafor package (also check the livecoding intro).
-- N.B. for the purpose of the assignment we're only interested in getting a meta-analytic effect size for the meta-analytic prior (and not e.g. all the stuff on publication bias). See a brms tutorial here: https://vuorre.netlify.com/post/2016/09/29/meta-analysis-is-a-special-case-of-bayesian-multilevel-modeling/ 
-The formula is EffectSize | se(StandardError) ~ 1 + (1 | Paper). Don't forget prior definition, model checking, etc.
+- N.B. for the purpose of the assignment we're only interested in getting a meta-analytic effect size for the meta-analytic prior (and not e.g. all the stuff on publication bias). See a brms tutorial here: https://vuorre.netlify.com/post/2016/09/29/meta-analysis-is-a-special-case-of-bayesian-multilevel-modeling/ The formula is EffectSize | se(StandardError) ~ 1 + (1 | Paper). Don't forget prior definition, model checking, etc.
 - N.B. the livecoding video is not perfect, you *can* (but don't have to) improve it: use a t-student likelihood, test the effects of the priors and refine them, check the robustness of results to more or less skeptical priors, etc. 
 - Write down the results of the meta-analysis in terms of a prior for step 2.
 
@@ -38,7 +39,8 @@ pacman::p_load(metafor,
                stringi, 
                readr,
                brms,
-               rethinking)
+               rethinking,
+               viridis)
 
 # Plot themes
 theme_set(theme_minimal())
@@ -54,7 +56,8 @@ d <- d %>%
     PitchVariabilityASD_Mean = as.numeric(PitchVariabilityASD_Mean),
     PitchVariabilityTD_Mean = as.numeric(PitchVariabilityTD_Mean),
     PitchVariabilityASD_SD = as.numeric(PitchVariabilityASD_SD),
-    PitchVariabilityTD_SD = as.numeric(PitchVariabilityTD_SD)
+    PitchVariabilityTD_SD = as.numeric(PitchVariabilityTD_SD),
+    Paper = as.factor(Paper)
   ) %>% subset(!is.na(Year))
 
 ```
@@ -202,7 +205,7 @@ long1 %>%
   ylab('Scaled Mean Pitch Variability') +
   scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), name = 'Diagnosis')
   
-?student
+
 ```
 
 
@@ -238,77 +241,319 @@ dens(d$EffectSize)
 # Forrest plot
 forest(ma_out, slab = d$Paper)
 
-# Funnel plot
-d[complete.cases(d['EffectSize']),] %>% 
+# Funnel plots
+d[complete.cases(d['EffectSize']),] %>%
   ggplot(aes(x = EffectSize, y = StandardError)) +
-  geom_point() +
-  scale_y_reverse() 
-  scale_y_continuous(limits = c(0, max(d$StandardError))) 
+  geom_point(aes(color = Author), size = 3) +
+  geom_vline(xintercept = coef(ma_out), lty = 2) +
+  geom_abline(intercept = coef(ma_out)/2,
+              slope = -0.5) +
+  geom_abline(intercept = -coef(ma_out)/2,
+              slope = 0.5) +
+  ylim(0.483, 0.022) +
+  xlim(coef(ma_out) - 1.1, coef(ma_out) + 1.1) +
+  geom_polygon(data=df_poly,aes(x,y),fill="blue",alpha=0.2)
 
-funnelplotdata <- funnel(ma_out)
+funnel(ma_out)
 
-# Create vector of colors
-my_colors <- c('red','blue')[(d$Paper)]
-
-length(unique(d$Paper))
-# Plot over points
-with(funnelplotdata, points(x, y, col = my_colors, pch = 19))
 ```
 
 
 ```{r}
+# rebuild_cmdstan(
+#   dir = cmdstan_path(),
+#   cores = getOption("mc.cores", 2),
+#   quiet = FALSE,
+#   timeout = 600
+# )
+
+# cleaning data
+d_clean <- d[complete.cases(d['EffectSize']),]
+d_clean$Paper <- as.factor(d_clean$Paper)
+```
+
+
+```{r}
+# Priors
 # the two models
-f0 <- bf(EffectSize | se(StandardError) ~ 0 + (1 | Paper))
 f1 <- bf(EffectSize | se(StandardError) ~ 1 + (1 | Paper))
 
-# clean
-d_clean <- d[complete.cases(d['EffectSize']),]
-
 # get priors
-get_prior(f0, data = d_clean)
-get_prior(f1, data = d_clean)
+get_prior(f1, data = d_clean, family = student)
 
-# null model priors - trying with gaussians / students t
-p0 <- c(
-  #prior(normal(0, 1), class = sd),
-  #prior(normal(1, 0.5), class = sd, group = Paper),
-  prior(normal(-0.5, 0.5), class = sd, coef = Intercept, group = Paper) # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+# model priors
+p1 <- c(
+  prior(normal(-0.5, 0.25), class = Intercept), # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+  prior(exponential(1), class = sd, group = Paper)
   )
 
-p0 <- c(
-  prior(exp(1), class = sd),
-  prior(exp(1), class = sd, group = Paper),
-  prior(normal(-0.5, 0.5), class = sd, coef = Intercept, group = Paper) # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
-  )
-  
-  
-p1 <- prior()
+p1_stud <- c(
+  prior(student_t(3, -0.5, 0.25), class = Intercept), # Prior for intercept
+  prior(exponential(1), class = sd, group = Paper),# Prior for sd between papers
+  prior(normal(0,10), class = nu)
+)
+p1_stud_gamma <- c(
+  prior(student_t(3, -0.5, 0.25), class = Intercept), # Prior for intercept
+  prior(exponential(1), class = sd, group = Paper),# Prior for sd between papers
+  prior(gamma(2,0.1), class = nu)
+)
 
-m0_prior <- brm(
-  formula = f0,
+
+```
+
+```{r}
+# Building model normal
+m1_prior <- brm(
+  formula = f1,
   data = d_clean,
   family = gaussian,
-  prior = p0,
+  prior = p1,
   sample_prior = "only",
   backend = "cmdstanr",
-  threads = threading(2)
+  threads = threading(2),
+  core = 2
 )
-
-m0 <- brm(
-  formula = f1, 
-  data = d, 
-  cores = 4,
-  file = "m1"
-)
+set.seed(123)
+pp_priornorm <- pp_check(m1_prior, nsamples = 100)
 
 m1 <- brm(
-  formula = f1, 
-  data = d, 
-  cores = 4,
-  file = "m1"
+  formula = f1,
+  data = d_clean,
+  family = gaussian,
+  prior = p1,
+  sample_prior = T,
+  backend = "cmdstanr",
+  threads = threading(2),
+  core = 2
 )
-??student
+
+pp_postnorm <- pp_check(m1, nsamples = 100)
+
+# Building model student
+m1_stud_prior <- brm(
+  formula = f1,
+  data = d_clean,
+  family = student,
+  prior = p1_stud,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  threads = threading(2),
+  core = 2
+)
+
+pp_priorstud <- pp_check(m1_stud_prior, nsamples = 100)
+
+m1_stud <- brm(
+  formula = f1,
+  data = d_clean,
+  family = student,
+  prior = p1_stud,
+  sample_prior = T,
+  backend = "cmdstanr",
+  threads = threading(2),
+  core = 2
+)
+
+
+m1_stud_gamma <- brm(
+  formula = f1,
+  data = d_clean,
+  family = student,
+  prior = p1_stud_gamma,
+  sample_prior = T,
+  backend = "cmdstanr",
+  threads = threading(2),
+  core = 2
+)
+
+
+pp_poststud <- pp_check(m1_stud, nsamples = 100)
+pp_poststud_gamma <- pp_check(m1_stud_gamma, nsamples = 100)
+
+pp_poststud+title("normal")
+pp_poststud_gamma+title("gamma")
+
+pp_priornorm+ggtitle("Prior predictive check
+Effectsize, Intercept modelled w. Gaussian/Normal prior")
+pp_postnorm+ggtitle("Posterior predictive check
+Effectsize, Intercept modelled w. Gaussian/Normal prior")
+pp_priorstud+ggtitle("Prior predictive check
+Effectsize, Intercept modelled w. Student's T prior")
+pp_poststud+ggtitle("Posterior predictive check
+Effectsize, Intercept modelled w. Student's T prior")
 ```
+
+
+```{r}
+# checking model
+
+# Sampling from the posterior
+posterior_m1 <- posterior_samples(m1) 
+posterior_m1_stud <- posterior_samples(m1_stud) 
+posterior_m1_stud_normalnu <- posterior_samples(m1_stud) 
+
+
+# Creating a long format of the posterior to plot the different distributions together
+posterior_m1 %>% pivot_longer(c(prior_Intercept,Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Posterior learning plot - Model w. Normal_Int")+
+  scale_fill_manual(values = c('prior_Intercept' = 'royalblue', 'Intercept' = 'firebrick'), name = 'Estimates')
+
+posterior_m1_stud %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Posterior learning plot - Model w. Students_Int")+
+  scale_fill_manual(values = c('prior_Intercept' = 'royalblue', 'Intercept' = 'firebrick'), name = 'Estimates')
+
+posterior_m1 %>% 
+  pivot_longer(c(prior_sd_Paper,sd_Paper__Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("SD: Posterior learning plot - Model w. Normal_Int")+
+  scale_fill_manual(values = c('prior_sd_Paper' = 'royalblue', 'sd_Paper__Intercept' = 'firebrick'), name = 'Estimates')
+
+posterior_m1_stud %>% 
+  pivot_longer(c(prior_sd_Paper,sd_Paper__Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("SD: Posterior learning plot - Model w. Students_Int")+
+  scale_fill_manual(values = c('prior_sd_Paper' = 'royalblue', 'sd_Paper__Intercept' = 'firebrick'), name = 'Estimates')
+
+
+posterior_m1_stud %>% 
+  pivot_longer(c(prior_nu,nu), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("SD: Posterior learning plot - Model w. Students_Int")+
+  scale_fill_manual(values = c('prior_nu' = 'royalblue', 'nu' = 'firebrick'), name = 'Estimates')
+
+posterior_m1_stud_normalnu %>% 
+  pivot_longer(c(prior_nu,nu), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("SD: Posterior learning plot - Model w. Students_Int")+
+  scale_fill_manual(values = c('prior_nu' = 'royalblue', 'nu' = 'firebrick'), name = 'Estimates')
+
+# checking rhat/tail/ess/bulk
+summary(m1)
+summary(m1_stud)
+
+# trace plots - theyre mixing well and explores all space
+library(bayesplot)
+
+color_scheme_set("viridis")
+# model 1
+mcmc_trace(m1)+theme_classic() 
+mcmc_trace(m1, pars = "b_Intercept", "sd_Paper__Intercept")+theme_classic()+ggtitle("m1, Caterpillar plot for b_Intercept and sd_Paper__Intercept")
+mcmc_rank_overlay(m1)+theme_classic()
+
+# model 1 stud
+mcmc_trace(m1_stud)+theme_classic() 
+mcmc_trace(m1_stud, pars = "b_Intercept", "sd_Paper__Intercept")+theme_classic()+ggtitle("m1_stud, Caterpillar plot for b_Intercept and sd_Paper__Intercept")
+mcmc_rank_overlay(m1_stud)+theme_classic()
+
+
+```
+
+# Model comparison
+
+```{r}
+
+
+m1 <- add_criterion(m1,criterion = c("bayes_R2", "loo"),reloo = T)
+m1_stud <- add_criterion(m1_stud,criterion = c("bayes_R2", "loo"),reloo = T)
+
+# we cant use loo compare 
+loo_compare(m1, m1_stud)
+loo_model_weights(m1, m1_stud)
+
+# Where are the influential points
+library(loo)
+
+loo(m1) %>% 
+  pareto_k_ids(threshold = 0.7) # 3 observation; 6, 11, 13 / 6, 7, 10, 11
+
+loo(m1_stud) %>% 
+  pareto_k_ids(threshold = 0.7) # 2 observations: 6, 30 / 13
+
+# Access the rows directly with the slice() 
+
+# For Model 1 (m1)
+summary(d_clean$EffectSize)
+
+d_clean %>% 
+  slice(6) %>% 
+  select(Paper,
+         Population, 
+         EffectSize,
+         Language,
+         StandardError
+         ) # 
+
+d_clean %>% 
+  slice(20) %>% 
+  select(Paper,
+         Author,
+         Year,
+         Population, 
+         EffectSize,
+         Language,
+         StandardError
+         ) # NA effect size
+d1 %>% 
+  slice(30) %>% 
+  select(Paper,
+         Population, 
+         EffectSize,
+         Language,
+         StandardError
+         ) # negative effect size
+
+# For Model 2 (m1_stud)
+d %>% 
+  slice(16) %>% 
+  select(Paper,
+         Population, 
+         EffectSize,
+         Language,
+         StandardError
+         ) # negative effect size
+d %>% 
+  slice(17) %>% 
+  select(Paper,
+         Population, 
+         EffectSize,
+         Language,
+         StandardError
+         ) # NA effect size
+
+Effectsize
+# Trying to plot it
+d$EffectSize
+# Model 1
+tibble(pareto_k = m1$criteria$loo$diagnostics$pareto_k,
+       p_loo   = m1$criteria$loo$pointwise[, "p_loo"],
+       EffectSize      = pull(d, EffectSize)) %>% 
+  ggplot(aes(x = pareto_k, y = p_loo, color = EffectSize == "Paper")) +
+  #geom_vline(xintercept = .5, linetype = 2, color = "black", alpha = 1/2) +
+  geom_point(aes(shape = EffectSize == "Paper")) # +
+  # geom_text(data = . %>% filter(p_loo > 0.7),
+  #           aes(x = pareto_k - 0.03, label = Paper),
+  #           hjust = 1) +
+  # scale_color_manual(values = carto_pal(7, "BurgYl")[c(5, 7)]) +
+  # scale_shape_manual(values = c(1, 19)) +
+  # labs(subtitle = "text") +
+  # theme(legend.position = "none")
+```
+
+
 
 
 Step 2: Analyse pitch variability in ASD in two new studies for which you have access to all the trials (not just study level estimates)
