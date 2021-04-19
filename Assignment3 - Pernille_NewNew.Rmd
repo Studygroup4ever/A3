@@ -4,7 +4,7 @@ author: "Ormo"
 date: "4/12/2021"
 output: html_document
 editor_options: 
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
 
@@ -368,7 +368,7 @@ posterior_m1 <- posterior_samples(m1)
 posterior_m1_stud <- posterior_samples(m1_stud) 
 
 # Creating a long format of the posterior to plot the different distributions together
-posterior_m1 %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+posterior_m1 %>% pivot_longer(c(prior_Intercept,Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()+
@@ -381,29 +381,50 @@ posterior_m1_stud %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Es
   ggtitle("Posterior learning plot - Model w. Students_Int")
 
 posterior_m1 %>% 
-  pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
+  pivot_longer(c(prior_sd_Paper,sd_Paper__Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()+
   ggtitle("SD: Posterior learning plot - Model w. Normal_Int")
 
 posterior_m1_stud %>% 
-  pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
+  pivot_longer(c(prior_sd_Paper,sd_Paper__Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()+
   ggtitle("SD: Posterior learning plot - Model w. Students_Int")
 
+
+# checking rhat/tail/ess/bulk
 summary(m1)
 summary(m1_stud)
+
+# trace plots - theyre mixing well and explores all space
+library(bayesplot)
+
+color_scheme_set("viridis")
+# model 1
+mcmc_trace(m1)+theme_classic() 
+mcmc_trace(m1, pars = "b_Intercept", "sd_Paper__Intercept")+theme_classic()+ggtitle("m1, Caterpillar plot for b_Intercept and sd_Paper__Intercept")
+mcmc_rank_overlay(m1)+theme_classic()
+
+# model 1 stud
+mcmc_trace(m1_stud)+theme_classic() 
+mcmc_trace(m1_stud, pars = "b_Intercept", "sd_Paper__Intercept")+theme_classic()+ggtitle("m1_stud, Caterpillar plot for b_Intercept and sd_Paper__Intercept")
+mcmc_rank_overlay(m1_stud)+theme_classic()
+
+
 ```
 
 # Model comparison
 
 ```{r}
-m1 <- add_criterion(m1,criterion = c("bayes_R2", "loo"))
-m1_stud <- add_criterion(m1_stud,criterion = c("bayes_R2", "loo"))
 
+
+m1 <- add_criterion(m1,criterion = c("bayes_R2", "loo"),reloo = T)
+m1_stud <- add_criterion(m1_stud,criterion = c("bayes_R2", "loo"),reloo = T)
+
+# we cant use loo compare 
 loo_compare(m1, m1_stud)
 loo_model_weights(m1, m1_stud)
 
@@ -411,61 +432,62 @@ loo_model_weights(m1, m1_stud)
 library(loo)
 
 loo(m1) %>% 
-  pareto_k_ids(threshold = 0.7) # 3 observation; 
+  pareto_k_ids(threshold = 0.7) # 3 observation; 6, 11, 13 / 6, 7, 10, 11
 
 loo(m1_stud) %>% 
-  pareto_k_ids(threshold = 0.7) # 2 
+  pareto_k_ids(threshold = 0.7) # 2 observations: 6, 30 / 13
 
 # Access the rows directly with the slice() 
 
 # For Model 1 (m1)
-d %>% 
+summary(d_clean$EffectSize)
+
+d_clean %>% 
   slice(6) %>% 
   select(Paper,
-         Author,
-         Year,
          Population, 
          EffectSize,
-         Language
-         ) # positive effect size
-d %>% 
+         Language,
+         StandardError
+         ) # 
+
+d_clean %>% 
   slice(20) %>% 
   select(Paper,
          Author,
          Year,
          Population, 
          EffectSize,
-         Language
+         Language,
+         StandardError
          ) # NA effect size
-d %>% 
+d1 %>% 
   slice(30) %>% 
   select(Paper,
-         Author,
-         Year,
          Population, 
          EffectSize,
-         Language
+         Language,
+         StandardError
          ) # negative effect size
 
 # For Model 2 (m1_stud)
 d %>% 
   slice(16) %>% 
   select(Paper,
-         Author,
-         Year,
          Population, 
          EffectSize,
-         Language
+         Language,
+         StandardError
          ) # negative effect size
 d %>% 
   slice(17) %>% 
   select(Paper,
-         Author,
-         Year,
          Population, 
          EffectSize,
-         Language
+         Language,
+         StandardError
          ) # NA effect size
+
 Effectsize
 # Trying to plot it
 d$EffectSize
