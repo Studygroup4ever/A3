@@ -32,7 +32,8 @@ Step 1: Perform a meta-analysis of pitch variability from previous studies of vo
 pacman::p_load(readr,
                tidyverse,
                metafor,
-               brms)
+               brms,
+               bayesplot)
 
 MA_d <- read_delim("Ass3_MetaAnalysisData.tsv", delim ="\t") 
 
@@ -117,6 +118,11 @@ MA_m1 <- brm(
 pp_check(MA_m1, nsamples = 100)
 
 summary(MA_m1)
+post_MA_m1 <- posterior_samples(MA_m1)
+summary(post_MA_m1$b_Intercept)
+
+ggplot(post_MA_m1) + geom_density(aes(b_Intercept))
+ggplot(post_MA_m1) + geom_density(aes(sd_Population__Intercept))
 
 # the MA effect mean = 0.43, sd = 0.1, 
 fixef(MA_m1) #gives exact values, and then we can access the first by
@@ -180,6 +186,7 @@ ass3 %>%
   group_by(Diagnosis) %>% 
   summarize(mean_IQR_z = mean(IQR_z),
             sd_IQR_z = sd(IQR_z))
+(-0.162)-0.120
 
 ass3 %>% 
   ggplot(aes(Diagnosis, IQR_z)) + 
@@ -203,86 +210,98 @@ Step 3: Build a regression model predicting Pitch variability from Diagnosis.
 
 
 ```{r}
+ass3 %>% 
+  ggplot() +
+  geom_density(aes(IQR_z)) + 
+  theme_minimal() +
+  ggtitle("Distribution of Pitch variability") #Distribution looks relatively gaussian, with a bit of a right skew
 
 summary(ass3$IQR_z)
-#Model formula
-ass_f0 <- bf(IQR_z ~ Diagnosis)
-#(1|Language) + (1|ID)
-  
-get_prior(ass_f0, data = ass3, family = gaussian())
-
-ass_f0_prior <- c(
-  prior(normal(0, 1), class = Intercept),
-  prior(normal(0, 0.5), class = b),
-  prior(exponential(1), class = sigma)
-)
-
-ass_m0_prior <- brm(
-  ass_f0,
-  data = ass3,
-  family = gaussian(),
-  prior = ass_f0_prior,
-  sample_prior = "only",
-  chains = 2,
-  cores = 2,
-  backend="cmdstanr",
-  threads = threading(2),
-  file = "ass_m0_prior"
-)
-
-pp_check(ass_m0_prior, nsamples = 100)
-
-ass_m0_post <- brm(
-  ass_f0,
-  data = ass3,
-  family = gaussian(),
-  prior = ass_f0_prior,
-  sample_prior = T,
-  chains = 2,
-  cores = 2,
-  backend="cmdstanr",
-  threads = threading(2),
-  file = "ass_m0_post"
-)
-
-pp_check(ass_m0_post, nsamples = 100)
-
-posterior <- posterior_samples(ass_m0_post)
+# #Model formula
+# ass_f0 <- bf(IQR_z ~ Diagnosis)
+# #(1|Language) + (1|ID)
+#   
+# get_prior(ass_f0, data = ass3, family = gaussian())
+# 
+# ass_f0_prior <- c(
+#   prior(normal(0, 1), class = Intercept),
+#   prior(normal(0, 0.5), class = b),
+#   prior(exponential(1), class = sigma)
+# )
+sample <- prior_samples(ass_m0_post)
+View(sample)
+sample %>% 
+  ggplot() + 
+  geom_density(aes(sigma)) + 
+  ggtitle("Plot for model error sigma")
 
 
-ggplot(posterior) + #plotting the intercept prior + posterior
-  theme_classic() +
-  geom_density(aes(prior_Intercept), fill="red", alpha=0.3) +
-  geom_density(aes(Intercept), fill="blue", alpha=0.5)
 
-ggplot(posterior) + #Plotting the beta prior + posterior
-  theme_classic() +
-  geom_density(aes(prior_b), fill="red", alpha=0.3) +
-  geom_density(aes(b_DiagnosisTD), fill="blue", alpha=0.5)
-
-ggplot(posterior) + #Plotting the sigma prior + posterior
-  theme_classic() +
-  geom_density(aes(prior_sigma), fill="red", alpha=0.3) +
-  geom_density(aes(sigma), fill="blue", alpha=0.5)
-
-conditional_effects(ass_m0_post)  #Wow big diff
-plot(conditional_effects(ass_m0_post), points=T) #This looks strange but..
-
-plot(conditional_effects(ass_m0_post, spaghetti=T, nsamples=100, method = "fitted"), points=T)
-
-plot(conditional_effects(ass_m0_post, spaghetti=T, nsamples=100, method = "predict"), points=T)
+# 
+# ass_m0_prior <- brm(
+#   ass_f0,
+#   data = ass3,
+#   family = gaussian(),
+#   prior = ass_f0_prior,
+#   sample_prior = "only",
+#   chains = 2,
+#   cores = 2,
+#   backend="cmdstanr",
+#   threads = threading(2),
+#   file = "ass_m0_prior"
+# )
+# 
+# pp_check(ass_m0_prior, nsamples = 100)
+# 
+# ass_m0_post <- brm(
+#   ass_f0,
+#   data = ass3,
+#   family = gaussian(),
+#   prior = ass_f0_prior,
+#   sample_prior = T,
+#   chains = 2,
+#   cores = 2,
+#   backend="cmdstanr",
+#   threads = threading(2),
+#   file = "ass_m0_post"
+# )
+# 
+# pp_check(ass_m0_post, nsamples = 100)
+# 
+# posterior <- posterior_samples(ass_m0_post)
+# 
+# 
+# ggplot(posterior) + #plotting the intercept prior + posterior
+#   theme_classic() +
+#   geom_density(aes(prior_Intercept), fill="red", alpha=0.3) +
+#   geom_density(aes(Intercept), fill="blue", alpha=0.5)
+# 
+# ggplot(posterior) + #Plotting the beta prior + posterior
+#   theme_classic() +
+#   geom_density(aes(prior_b), fill="red", alpha=0.3) +
+#   geom_density(aes(b_DiagnosisTD), fill="blue", alpha=0.5)
+# 
+# ggplot(posterior) + #Plotting the sigma prior + posterior
+#   theme_classic() +
+#   geom_density(aes(prior_sigma), fill="red", alpha=0.3) +
+#   geom_density(aes(sigma), fill="blue", alpha=0.5)
+# 
+# conditional_effects(ass_m0_post)  #Wow big diff
+# plot(conditional_effects(ass_m0_post), points=T) #This looks strange but..
+# 
+# plot(conditional_effects(ass_m0_post, spaghetti=T, nsamples=100, method = "fitted"), points=T)
+# 
+# plot(conditional_effects(ass_m0_post, spaghetti=T, nsamples=100, method = "predict"), points=T)
 
 
 ###Now trying to add some random (varying) effects
-ass_f1 <- bf(IQR_z ~ Diagnosis + (1|Language:ID))
+ass_f1 <- bf(IQR_z ~ 0 + Diagnosis + (1|Language) + (1|Language:ID))
 
 get_prior(ass_f1, data = ass3, family = gaussian())
 
 ass_f1_prior <- c(
-  prior(normal(0, 1), class = Intercept),
-  prior(normal(0, 0.3), class = b),
-  prior(normal(0, 0.3), class = sd, group = Language:ID),
-  prior(normal(0, 0.3), class = sd, coef = Intercept, group = Language:ID),
+  prior(normal(0, 0.1), class = b),
+  prior(exponential(1), class = sd),
   prior(exponential(1), class = sigma)
 )
 
@@ -293,11 +312,10 @@ ass_m1_prior <- brm(
   prior = ass_f1_prior,
   sample_prior = "only",
   chains = 2,
-  cores = 2,
+  cores =4,
   backend="cmdstanr",
   threads = threading(2),
-  file = "ass_m1_prior"
-)
+  )
 
 pp_check(ass_m1_prior, nsamples = 50) #Looks not toooo bad
 
@@ -308,25 +326,25 @@ ass_m1_post <- brm(
   prior = ass_f1_prior,
   sample_prior = T,
   chains = 2,
-  cores = 2,
+  cores = 4,
   backend="cmdstanr",
   threads = threading(2),
-  file = "ass_m1_post"
-)
+  )
+
 # Warning message:
-# The global prior 'normal(0, 0.3)' of class 'sd' will not be used in the model as all related coefficients have individual priors already. If you did not set those priors yourself, then maybe brms has assigned default priors. See ?set_prior and ?get_prior for more details.
+# Warning: 10 of 2000 (0.0%) transitions ended with a divergence.
+# This may indicate insufficient exploration of the posterior distribution.
+# Possible remedies include: 
+#   * Increasing adapt_delta closer to 1 (default is 0.8) 
+#   * Reparameterizing the model (e.g. using a non-centered parameterization)
+#   * Using informative or weakly informative prior distributions 
 
 pp_check(ass_m1_post, nsamples = 50)
 
 conditional_effects(ass_m1_post) #Now the difference doesn't seem too certain
 
 posterior_gauss <- posterior_samples(ass_m1_post)
-View(posterior_gauss)
 
-ggplot(posterior_gauss) + #plotting the intercept prior + posterior
-  theme_classic() +
-  geom_density(aes(prior_Intercept), fill="red", alpha=0.3) +
-  geom_density(aes(Intercept), fill="blue", alpha=0.5)
 
 ggplot(posterior_gauss) + #Plotting the beta prior + posterior
   theme_classic() +
@@ -341,15 +359,14 @@ ggplot(posterior_gauss) + #Plotting the sigma prior + posterior
 
 ####STUDENT T####
 #################
-ass_f1_student <- bf(IQR_z ~ Diagnosis + (1|Language) + (1|ID))
+ass_f1_student <- bf(IQR_z ~ 0 + Diagnosis + (1|Language) + (1|Language:ID))
 
 get_prior(ass_f1_student, data = ass3, family = student())
 
 ass_f1_student_prior <- c(
-  prior(normal(0, 1), class = Intercept),
-  prior(normal(0, 0.3), class = b),
-  prior(gamma(2,0.1), class = nu),
-  prior(normal(0, 0.3), class = sd, group = Language:ID),
+  prior(normal(0, 0.1), class = b),
+  prior(normal(15,7.5), class = nu),
+  prior(exponential(1), class = sd),
   prior(exponential(1), class = sigma)
 )
 
@@ -360,10 +377,9 @@ ass_m1_student_prior <- brm(
   prior = ass_f1_student_prior,
   sample_prior = "only",
   chains = 2,
-  cores = 2,
+  cores = 4,
   backend="cmdstanr",
   threads = threading(2),
-  file = "ass_m1_student_prior"
 )
 
 pp_check(ass_m1_student_prior, nsamples = 50) #Looks not toooo bad
@@ -375,11 +391,10 @@ ass_m1_student_post <- brm(
   prior = ass_f1_student_prior,
   sample_prior = T,
   chains = 2,
-  cores = 2,
+  cores = 4,
   backend="cmdstanr",
   threads = threading(2),
-  file = "ass_m1_student_post"
-)
+  )
 
 pp_check(ass_m1_student_post, nsamples = 50)
 
@@ -387,22 +402,51 @@ conditional_effects(ass_m1_student_post)
 
 posterior_student <- posterior_samples(ass_m1_student_post)
 View(posterior_student)
+colnames(posterior_student)
+
+posterior_student %>% 
+  pivot_longer(c(b_DiagnosisASD, b_DiagnosisTD, prior_b), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
+
+posterior_student %>% 
+  pivot_longer(c(prior_sigma, sigma), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
+
+posterior_student %>% 
+  pivot_longer(c(prior_sd_Language, sd_Language__Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
+
+posterior_student %>% 
+  pivot_longer(c(prior_nu, nu), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
 
 
-ggplot(posterior_student) + #plotting the intercept prior + posterior
-  theme_classic() +
-  geom_density(aes(prior_Intercept), fill="red", alpha=0.3) +
-  geom_density(aes(Intercept), fill="blue", alpha=0.5)
+#Chain checks for both models
+posterior_gauss$`sd_Language:ID__Intercept`
 
-ggplot(posterior_student) + #Plotting the beta prior + posterior
-  theme_classic() +
-  geom_density(aes(prior_b), fill="red", alpha=0.3) +
-  geom_density(aes(b_DiagnosisTD), fill="blue", alpha=0.5)
+mcmc_trace(ass_m1_post, 
+           pars = c("b_DiagnosisASD", 
+                    "b_DiagnosisTD", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'sigma')) +
+  theme_classic() 
 
-ggplot(posterior_student) + #Plotting the sigma prior + posterior
-  theme_classic() +
-  geom_density(aes(prior_sigma), fill="red", alpha=0.3) +
-  geom_density(aes(sigma), fill="blue", alpha=0.5)
+mcmc_rank_overlay(ass_m1_post,
+                  pars = c("b_DiagnosisASD", 
+                    "b_DiagnosisTD", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'sigma')) + 
+  theme_classic()
 
 
 
@@ -457,7 +501,56 @@ Step 4: Now re-run the model with the meta-analytic prior
 - N.B. you need to assess the meta-analytic informed prior (prior pred checks, prior-posterior update checks) and if relevant you can always change it in motivated ways (e.g. too confident, doesn't let the model actually learn from the data, so increase sd)
 
 ```{r}
+###Now trying to add some random (varying) effects
+ass_MA_gauss_f1 <- bf(IQR_z ~ 0 + Diagnosis + (1|Language) + (1|Language:ID))
 
+get_prior(ass_MA_gauss_f1, data = ass3, family = gaussian()) 
+
+ass_f1_prior <- c(
+  prior(normal(-0.47, 0.38), class = b),
+  prior(exponential(1), class = sd),
+  prior(exponential(1), class = sigma)
+)
+
+ass_m1_prior <- brm(
+  ass_f1,
+  data = ass3,
+  family = gaussian(),
+  prior = ass_f1_prior,
+  sample_prior = "only",
+  chains = 2,
+  cores =4,
+  backend="cmdstanr",
+  threads = threading(2),
+  )
+
+pp_check(ass_m1_prior, nsamples = 50) #Looks not toooo bad
+
+ass_m1_post <- brm(
+  ass_f1,
+  data = ass3,
+  family = gaussian(),
+  prior = ass_f1_prior,
+  sample_prior = T,
+  chains = 2,
+  cores = 4,
+  backend="cmdstanr",
+  threads = threading(2),
+  )
+
+# Warning message:
+# Warning: 10 of 2000 (0.0%) transitions ended with a divergence.
+# This may indicate insufficient exploration of the posterior distribution.
+# Possible remedies include: 
+#   * Increasing adapt_delta closer to 1 (default is 0.8) 
+#   * Reparameterizing the model (e.g. using a non-centered parameterization)
+#   * Using informative or weakly informative prior distributions 
+
+pp_check(ass_m1_post, nsamples = 50)
+
+conditional_effects(ass_m1_post) #Now the difference doesn't seem too certain
+
+posterior_gauss <- posterior_samples(ass_m1_post)
 
 
 
