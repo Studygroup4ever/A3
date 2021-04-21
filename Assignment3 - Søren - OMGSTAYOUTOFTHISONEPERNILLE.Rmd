@@ -249,8 +249,7 @@ d[complete.cases(d['EffectSize']),] %>%
   geom_abline(intercept = -coef(ma_out)/2,
               slope = 0.5) +
   ylim(0.483, 0.022) +
-  xlim(coef(ma_out) - 1.1, coef(ma_out) + 1.1) +
-  geom_polygon(data=df_poly,aes(x,y),fill="blue",alpha=0.2)
+  xlim(coef(ma_out) - 1.1, coef(ma_out) + 1.1)
 
 funnel(ma_out)
 
@@ -277,32 +276,43 @@ d_clean$Paper <- as.factor(d_clean$Paper)
 f1 <- bf(EffectSize | se(StandardError) ~ 1 + (1 | Paper))
 
 # get priors
-get_prior(f1, data = d_clean)
+get_prior(f1, 
+          data = d_clean)
+
+get_prior(f1, 
+          data = d_clean,
+          family = student)
 
 # model priors
-p1 <- c(
-  prior(normal(-0.5, 0.5), class = Intercept), # mean at -0.5 because that's around the SME, sd set to 0.5 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+p1_norm <- c(
+  prior(normal(-0.5, 0.25), class = Intercept), # mean at -0.5 because that's around the SME, sd set to 0.25 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
   prior(exponential(1), class = sd, group = Paper)
+  )
+
+p1_stud <- c(
+  prior(student_t(10, -0.5, 0.25), class = Intercept), # mean at -0.5 because that's around the SME, sd set to 0.25 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+  prior(exponential(1), class = sd, group = Paper),
+  prior(normal(0, 30), class = nu)
   )
 
 ```
 
 ```{r}
-# Building model normal
-m1_prior <- brm(
+# Building normal model prior
+m1_norm_prior <- brm(
   formula = f1,
   data = d_clean,
   family = gaussian,
-  prior = p1,
+  prior = p1_norm,
   sample_prior = "only",
   backend = "cmdstanr",
   threads = threading(2),
-  core = 2,
-  file = 'm1_prior'
+  core = 2
 )
-pp_priornorm <- pp_check(m1_prior, nsamples = 100)
 
-m1 <- brm(
+# Building normal model full
+
+m1_norm <- brm(
   formula = f1,
   data = d_clean,
   family = gaussian,
@@ -310,44 +320,47 @@ m1 <- brm(
   sample_prior = T,
   backend = "cmdstanr",
   threads = threading(2),
-  core = 2,
-  file = "m1"
+  core = 2
 )
 
-pp_postnorm <- pp_check(m1, nsamples = 100)
+# Building student model prior
 
-# Building model student
 m1_stud_prior <- brm(
   formula = f1,
   data = d_clean,
   family = student,
-  prior = p1,
+  prior = p1_stud,
   sample_prior = "only",
   backend = "cmdstanr",
   threads = threading(2),
-  core = 2,
-  file = "m1_stud_prior"
+  core = 2
 )
 
-pp_priorstud <- pp_check(m1_stud_prior, nsamples = 100)
+# Building model student full
 
 m1_stud <- brm(
   formula = f1,
   data = d_clean,
   family = student,
-  prior = p1,
+  prior = p1_stud,
   sample_prior = T,
   backend = "cmdstanr",
   threads = threading(2),
-  core = 2,
-  file = "m1_stud_prior"
+  core = 2
 )
+
+
+pp_priornorm <- pp_check(m1_norm_prior, nsamples = 100)
+
+pp_postnorm <- pp_check(m1_norm, nsamples = 100)
+
+pp_priorstud <- pp_check(m1_stud_prior, nsamples = 100)
 
 pp_poststud <- pp_check(m1_stud, nsamples = 100)
 
 pp_priornorm 
 pp_postnorm
-pp_priorstud 
+pp_priorstud
 pp_poststud
 ```
 
@@ -357,41 +370,65 @@ pp_poststud
 
 
 # Sampling from the posterior
-posterior_m1 <- posterior_samples(m1) 
+posterior_m1_norm <- posterior_samples(m1_norm) 
 posterior_m1_stud <- posterior_samples(m1_stud) 
 
 # Creating a long format of the posterior to plot the different distributions together
 
-posterior_m1 %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+posterior_m1_norm %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()
 
-posterior_m1 %>% 
+posterior_m1_norm %>% 
   pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()
 
-posterior_m1 %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+posterior_m1_stud %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
-  theme_minimal()
+  theme_minimal() + xlim(-2.5,2.5)
 
-posterior_m1 %>% 
+posterior_m1_stud %>% 
   pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
   ggplot(aes(fill = Estimates)) +
   geom_density(aes(value), alpha = 0.3) +
   theme_minimal()
 
+posterior_m1_stud %>% 
+  pivot_longer(c(nu, prior_nu), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
 
 
-posterior_m1_stud$
-summary(m1)
-summary(m1_stud)
+
+m1_stud
 
 
+m1_norm <- add_criterion(m1_norm, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
+m1_stud <- add_criterion(m1_stud, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
 
+# we cant use loo compare 
+loo_compare(m1_norm, m1_stud)
+loo_model_weights(m1_norm, m1_stud)
+
+
+library(loo)
+
+loo(m1_norm) %>% 
+  pareto_k_ids(threshold = 0.7) # 3 observation; 6, 11, 13 / 6, 7, 10, 11
+
+loo(m1_stud) %>% 
+  pareto_k_ids(threshold = 0.7) # 2 observations: 6, 30 / 13
+
+m1_norm$criteria$loo$diagnostics$pareto_k
 ```
 
 
@@ -402,11 +439,411 @@ Step 2: Analyse pitch variability in ASD in two new studies for which you have a
 - Also, let's standardize the data, so that they are compatible with our meta-analytic prior (Cohen's d is measured in SDs).
 - Is there any structure in the dataset that we should account for with random/varying effects? How would you implement that? Or, if you don't know how to do bayesian random/varying effects or don't want to bother, is there anything we would need to simplify in the dataset?
 
+```{r}
+ass3 <- read_csv("Ass3_data.csv")
+
+str(ass3)
+ass3 <- ass3 %>% 
+  mutate(
+    ID = as.factor(ID),
+    Diagnosis = as.factor(Diagnosis),
+    Gender = as.factor(Gender),
+    Language = as.factor(Language),
+    IQR_z = scale(Pitch_IQR))
+
+ass3 <- ass3 %>% subset(!is.na(ID))
+
+ass3_clean <- filter(ass3, IQR_z < 3 & IQR_z > -3)
+
+ass3 %>% 
+  group_by(ID) %>% 
+  count(ID, sort = T) #< 15 trials per participant
+
+# ass3 %>%
+#   group_by(Diagnosis, Language) %>%
+#   summarize(count=n(ID))
+
+aggregate(ID ~ Language + Diagnosis, data = ass3_clean, FUN = length)
+332+161+421+116
+
+332/(332+421)
+161/(161+116)
+
+
+str(ass3_clean)
+
+ass3 %>% 
+  group_by(Diagnosis, Language) %>% 
+  summarize(mean_IQR_z = mean(IQR_z),
+            sd_IQR_z = sd(IQR_z))
+
+
+ass3 %>% 
+  group_by(Diagnosis) %>% 
+  summarize(mean_IQR_z = mean(IQR_z),
+            sd_IQR_z = sd(IQR_z))
+
+ass3 %>% 
+  ggplot(aes(Diagnosis, IQR_z)) + 
+  geom_boxplot()
+
+
+ass3 %>% 
+  ggplot(aes(color = Diagnosis)) +
+  geom_jitter(aes(x = Language, y = IQR_z))
+
+
+
+```
+
+
 Step 3: Build a regression model predicting Pitch variability from Diagnosis.
 - how is the outcome distributed? (likelihood function). NB. given we are standardizing, and the meta-analysis is on that scale, gaussian is not a bad assumption, but check t-student as well. Lognormal would require us to convert the prior to that scale.
 - how are the parameters of the likelihood distribution distributed? Which predictors should they be conditioned on? Start simple, with Diagnosis only. Add other predictors only if you have the time and energy!
 - use a skeptical/conservative prior for the effects of diagnosis. Remember you'll need to motivate it, test its predictions (prior predictive checks), its impact on the posteriors (prior posterior updates checks).
 - Evaluate model quality. Describe and plot the estimates. 
+
+```{r}
+summary(ass3$IQR_z)
+
+#Model formula
+ass_f0 <- bf(IQR_z ~ 0 + Diagnosis)
+#(1|Language) + (1|ID)
+  
+get_prior(ass_f0, data = ass3, family = gaussian())
+
+ass_f0_prior <- c(
+  prior(normal(0, 0.5), class = b),
+  prior(exponential(1), class = sigma)
+)
+
+ass_m0_prior <- brm(
+  ass_f0,
+  data = ass3,
+  family = gaussian,
+  prior = ass_f0_prior,
+  sample_prior = "only",
+  chains = 2,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+pp_check(ass_m0_prior, nsamples = 100)
+
+ass_m0_post <- brm(
+  ass_f0,
+  data = ass3,
+  family = gaussian,
+  prior = ass_f0_prior,
+  sample_prior = T,
+  chains = 2,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+pp_check(ass_m0_post, nsamples = 100)
+
+posterior <- posterior_samples(ass_m0_post)
+
+
+ggplot(posterior) + #plotting the intercept prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_Intercept), fill="red", alpha=0.3) +
+  geom_density(aes(Intercept), fill="blue", alpha=0.5)
+
+ggplot(posterior) + #Plotting the beta prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_b), fill="green", alpha=0.3) +
+  geom_density(aes(b_DiagnosisTD), fill="blue", alpha=0.5) +
+  geom_density(aes(b_DiagnosisASD), fill="red", alpha=0.5)
+
+ggplot(posterior) + #Plotting the sigma prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_sigma), fill="red", alpha=0.3) +
+  geom_density(aes(sigma), fill="blue", alpha=0.5)
+
+conditional_effects(ass_m0_post)  #Wow big diff
+
+plot(conditional_effects(ass_m0_post, spaghetti=T, nsamples=100, method = "fitted"), points=T)
+
+plot(conditional_effects(ass_m0_post, spaghetti=T, nsamples=100, method = "predict"), points=T)
+
+plot(ass_m0_post)
+```
+
+
+```{r}
+###Now trying to add some random (varying) effects
+ass_f1 <- bf(IQR_z ~ 0 + Diagnosis + (1|Language:ID))
+
+get_prior(ass_f1, data = ass3, family = gaussian())
+
+ass_f1_prior <- c(
+  prior(normal(0, 0.3), class = b),
+  prior(exponential(1), class = sd),
+  prior(exponential(1), class = sigma)
+)
+
+ass_m1_prior <- brm(
+  ass_f1,
+  data = ass3,
+  family = gaussian(),
+  prior = ass_f1_prior,
+  sample_prior = "only",
+  chains = 2,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+ass_m1_post <- brm(
+  ass_f1,
+  data = ass3,
+  family = gaussian(),
+  prior = ass_f1_prior,
+  sample_prior = T,
+  chains = 2,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2)
+)
+# Warning message:
+# The global prior 'normal(0, 0.3)' of class 'sd' will not be used in the model as all related coefficients have individual priors already. If you did not set those priors yourself, then maybe brms has assigned default priors. See ?set_prior and ?get_prior for more details.
+
+pp_check(ass_m1_prior, nsamples = 50) 
+pp_check(ass_m1_post, nsamples = 50)
+
+conditional_effects(ass_m1_post) #Now the difference doesn't seem too certain
+
+posterior_gauss <- posterior_samples(ass_m1_post)
+
+posterior_gauss %>% ggplot() + #plotting the intercept prior + posterior
+  theme_classic() +
+  geom_density(aes(b_DiagnosisASD), fill="red", alpha=0.3) +
+  geom_density(aes(b_DiagnosisTD), fill="blue", alpha=0.5) +
+  geom_density(aes(prior_b), fill="green", alpha=0.5)
+
+ggplot(posterior_gauss) + #Plotting the sigma prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_sigma), fill="red", alpha=0.3) +
+  geom_density(aes(sigma), fill="blue", alpha=0.5)
+
+ass_m1_post
+```
+
+```{r}
+###Now trying to add some random (varying) effects
+ass_f2 <- bf(IQR_z ~ 0 + Diagnosis + (1|Language:ID))
+
+get_prior(ass_f1, data = ass3, family = student)
+
+ass_f2_prior <- c(
+  prior(normal(0, 0.3), class = b),
+  prior(exponential(1), class = sd),
+  prior(exponential(1), class = sigma),
+  prior(normal(15,7.5), class = nu)
+)
+
+ass_m2_prior <- brm(
+  ass_f1,
+  data = ass3,
+  family = student,
+  prior = ass_f2_prior,
+  sample_prior = "only",
+  chains = 2,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+ass_m2_post <- brm(
+  ass_f2,
+  data = ass3,
+  family = student,
+  prior = ass_f2_prior,
+  sample_prior = T,
+  chains = 2,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+
+pp_check(ass_m2_prior, nsamples = 50) 
+pp_check(ass_m2_post, nsamples = 50) + xlim(-3,5)
+pp_check(ass_m1_post, nsamples = 50)
+
+conditional_effects(ass_m2_post)
+
+posterior_gauss <- posterior_samples(ass_m2_post)
+
+posterior_gauss %>% ggplot() + #plotting the intercept prior + posterior
+  theme_classic() +
+  geom_density(aes(b_DiagnosisASD), fill="red", alpha=0.3) +
+  geom_density(aes(b_DiagnosisTD), fill="blue", alpha=0.5) +
+  geom_density(aes(prior_b), fill="green", alpha=0.5)
+
+ggplot(posterior_gauss) + #Plotting the sigma prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_sigma), fill="red", alpha=0.3) +
+  geom_density(aes(sigma), fill="blue", alpha=0.5)
+
+ggplot(posterior_gauss) + #Plotting the sigma prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_nu), fill="red", alpha=0.3) +
+  geom_density(aes(nu), fill="blue", alpha=0.5)
+
+ass_m2_post
+```
+
+
+```{r}
+ass_m1_post <- add_criterion(ass_m2_post, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
+ass_m2_post <- add_criterion(ass_m2_post, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
+ass_m0_post <- add_criterion(ass_m0_post, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
+
+
+# we cant use loo compare 
+loo_compare(ass_m0_post, ass_m1_post, ass_m2_post)
+loo_model_weights(ass_m0_post, ass_m1_post, ass_m2_post)
+
+
+library(loo)
+loo(ass_m0_post) %>% 
+  pareto_k_ids(threshold = 0.7) 
+
+loo(ass_m1_post) %>% 
+  pareto_k_ids(threshold = 0.7)
+
+loo(ass_m2_post) %>% 
+  pareto_k_ids(threshold = 0.7)
+
+```
+
+
+
+```{r}
+####STUDENT T####
+#################
+ass_f1_student <- bf(IQR_z ~ 0 + Diagnosis + (1|Language) + (1|ID))
+
+get_prior(ass_f1_student, data = ass3, family = student())
+
+ass_f1_student_prior <- c(
+  prior(normal(0, 1), class = Intercept),
+  prior(normal(0, 0.3), class = b),
+  prior(gamma(2,0.1), class = nu),
+  prior(normal(0, 0.3), class = sd, group = Language:ID),
+  prior(exponential(1), class = sigma)
+)
+
+ass_m1_student_prior <- brm(
+  ass_f1_student,
+  data = ass3,
+  family = student(),
+  prior = ass_f1_student_prior,
+  sample_prior = "only",
+  chains = 2,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2),
+  file = "ass_m1_student_prior"
+)
+
+pp_check(ass_m1_student_prior, nsamples = 50) #Looks not toooo bad
+
+ass_m1_student_post <- brm(
+  ass_f1_student,
+  data = ass3,
+  family = student(),
+  prior = ass_f1_student_prior,
+  sample_prior = T,
+  chains = 2,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2),
+  file = "ass_m1_student_post"
+)
+
+pp_check(ass_m1_student_post, nsamples = 50)
+
+conditional_effects(ass_m1_student_post)
+
+posterior_student <- posterior_samples(ass_m1_student_post)
+View(posterior_student)
+
+
+ggplot(posterior_student) + #plotting the intercept prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_Intercept), fill="red", alpha=0.3) +
+  geom_density(aes(Intercept), fill="blue", alpha=0.5)
+
+ggplot(posterior_student) + #Plotting the beta prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_b), fill="red", alpha=0.3) +
+  geom_density(aes(b_DiagnosisTD), fill="blue", alpha=0.5)
+
+ggplot(posterior_student) + #Plotting the sigma prior + posterior
+  theme_classic() +
+  geom_density(aes(prior_sigma), fill="red", alpha=0.3) +
+  geom_density(aes(sigma), fill="blue", alpha=0.5)
+
+
+
+# #####
+# #Trying only with Language as varying effect
+# ass_f2 <- bf(IQR_z ~ Diagnosis + (1|Language))
+# 
+# get_prior(ass_f2, data = ass3, family = gaussian())
+# 
+# ass_f2_prior <- c(
+#   prior(normal(0, 1), class = Intercept),
+#   prior(normal(0, 0.5), class = b),
+#   prior(normal(0, 0.3), class = sd, coef = Intercept, group = Language),
+#   prior(exponential(1), class = sigma)
+# )
+# 
+# ass_m2_prior <- brm(
+#   ass_f2,
+#   data = ass3,
+#   family = gaussian(),
+#   prior = ass_f1_prior,
+#   sample_prior = "only",
+#   chains = 2,
+#   cores = 2,
+#   backend="cmdstanr",
+#   threads = threading(2),
+#   file = "ass_m2_prior"
+# )
+# 
+# pp_check(ass_m2_prior, nsamples = 100) #Looks not toooo bad
+# 
+# ass_m2_post <- brm(
+#   ass_f2,
+#   data = ass3,
+#   family = gaussian(),
+#   prior = ass_f2_prior,
+#   sample_prior = T,
+#   chains = 2,
+#   cores = 2,
+#   backend="cmdstanr",
+#   threads = threading(2),
+#   file = "ass_m2_prior"
+# )
+# 
+# pp_check(ass_m2_post, nsamples = 100)
+# 
+# conditional_effects(ass_m2_post) #Looks garbage and not theoretically valid without random effect for ID
+```
+
 
 Step 4: Now re-run the model with the meta-analytic prior
 - Evaluate model quality. Describe and plot the estimates. 
