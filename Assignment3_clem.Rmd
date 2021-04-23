@@ -790,6 +790,141 @@ Optional step 7: how skeptical should a prior be?
 Optional step 8: Include other predictors
 - Do age, gender and education improve the model?
 - Should they be main effects or interactions?
+```{r}
+ass_MA_student_f2 <- bf(IQR_z ~ 1 + Diagnosis + Gender + Age + (1|Language) + (1|Language:ID))
+
+get_prior(ass_MA_student_f2, data = ass3, family = student()) 
+
+ass_MA_student_prior_f2 <- c(
+  prior(normal(0,1), class = Intercept),
+  prior(normal(0, 0.2), class = b, coef = DiagnosisASD),
+  prior(normal(0, 0.2), class = b, coef = GenderMale),
+  prior(normal(0, 0.2), class = b, coef = Age),
+  prior(normal(0.36, 0.18), class = sd),
+  prior(exponential(1), class = sigma),
+  prior(gamma(2,0.1), class = nu) #default
+)
+
+ass_MA_student_prior_m2 <- brm(
+  ass_MA_student_f2,
+  data = ass3,
+  family = student(),
+  prior = ass_MA_student_prior_f2,
+  sample_prior = "only",
+  chains = 2,
+  cores =4,
+  backend="cmdstanr",
+  threads = threading(2)
+ # file_refit = "on_change",
+ # control = list(
+ # adapt_delta = 0.99,
+ # max_treedepth = 20
+ # )
+  )
+
+pp_check(ass_MA_student_prior_m2, nsamples = 50)
+
+ass_MA_student_post_m2 <- brm(
+  ass_MA_student_f2,
+  data = ass3,
+  family = student(),
+  prior = ass_MA_student_prior_f2,
+  sample_prior = T,
+  chains = 2,
+  cores =4,
+  backend="cmdstanr",
+  threads = threading(2)
+  # control = list(
+  #   adapt_delta = 0.99,
+  #   max_treedepth = 20
+  )
+
+# Warning message:
+# Warning: 10 of 2000 (0.0%) transitions ended with a divergence.
+# This may indicate insufficient exploration of the posterior distribution.
+# Possible remedies include: 
+#   * Increasing adapt_delta closer to 1 (default is 0.8) 
+#   * Reparameterizing the model (e.g. using a non-centered parameterization)
+#   * Using informative or weakly informative prior distributions 
+
+pp_check(ass_MA_student_post_m2, nsamples = 50)
+ass_MA_student_post_m2
+
+conditional_effects(ass_MA_student_post_m2) #Now the difference doesn't seem too certain
+
+posterior_student_MA2 <- posterior_samples(ass_MA_student_post_m2)
+colnames(posterior_student_MA2)
+
+posterior_student_MA2 %>%  #Posterior-update check
+  pivot_longer(c(b_DiagnosisASD, prior_b_DiagnosisASD), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal() +
+  ggtitle("Posterior-update check for beta")
+
+posterior_student_MA2 %>%  #Posterior-update check
+  pivot_longer(c(b_Age, prior_b_Age), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal() +
+  ggtitle("Posterior-update check for beta")
+
+posterior_student_MA2 %>%  #Posterior-update check
+  pivot_longer(c(prior_sigma,sigma), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  scale_fill_manual(values = c('prior_sigma' = 'royalblue', 'sigma' = 'firebrick'), name = 'Estimates') +
+  theme_minimal() +
+  ggtitle("Posterior-update check for sigma")
+
+posterior_student_MA2 %>%  #Posterior-update check
+  pivot_longer(c(prior_b_GenderMale, b_GenderMale), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal() +
+  ggtitle("Posterior-update check for Intercept")
+
+
+##SAMPLING QUALITY###
+#####################
+
+#FOr student model
+mcmc_trace(ass_MA_student_post_m2, 
+           pars = c("b_DiagnosisASD", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'sigma')) +
+  theme_minimal() 
+
+
+mcmc_rank_overlay(ass_MA_student_post_m2,
+                  pars = c("b_DiagnosisASD", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'sigma')) + 
+  theme_minimal()
+
+ass_MA_student_post_m2 <- add_criterion(ass_MA_student_post_m1, criterion = c("bayes_R2", "loo")) #Adding loo criterion
+
+loo_compare(ass_m1_student_post, ass_MA_student_post_m1, ass_MA_student_post_m2)
+loo_model_weights(ass_m1_student_post, ass_MA_student_post_m1, ass_MA_student_post_m2)
+#We get some Pareto k warnings saying some values are slightly high
+
+loo(ass_m1_student_post) %>% 
+  pareto_k_ids(threshold = 0.7)
+
+loo(ass_MA_student_post_m1) %>% 
+  pareto_k_ids(threshold = 0.7)
+
+dens(ass_m1_student_post$criteria$loo$diagnostics$pareto_k)
+dens(ass_MA_student_post_m1$criteria$loo$diagnostics$pareto_k)
+
+(loo(ass_m1_student_post))
+(loo(ass_MA_student_post_m1))
+
+
+```
+
 
 Optional step 9: generalized linear models
 - If you wanted to preserve the lognormal distribution of the pitch variability, what would 
