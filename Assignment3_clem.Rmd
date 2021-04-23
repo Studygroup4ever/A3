@@ -70,11 +70,12 @@ MA_d <- escalc(measure = "SMD", #stand mean diff
         
 colnames(MA_d) # yi = obsrved effect size for that size, vi = variance in that study. If we want to calculate standard error for our measure 
 
-MA_d <- MA_d %>% mutate(
-  StandardError = sqrt(vi)
-) %>% rename(
-  EffectSize = yi
-)
+MA_d <- MA_d %>% 
+  mutate(
+    StandardError = sqrt(vi))# %>% 
+  #rename(
+    #EffectSize = yi
+    #)
 
 summary(MA_d$EffectSize)
 summary(MA_d$StandardError) # goes from .2 to .5 almost. Only posirive, which is what we want. 
@@ -82,17 +83,18 @@ summary(MA_d$StandardError) # goes from .2 to .5 almost. Only posirive, which is
 # We wanna calculate a meta analystic effect size. The bigger the uncertainty, the smaller the weight. 
 MA_f <- bf(EffectSize | se(StandardError) ~ 1 + (1 | Population ))
 
-get_prior(MA_f, data = MA_d, family = gaussian())
+get_prior(MA_f, data = MA_d, family = student())
 
 MA_prior <- c(
-  prior(normal(0,1), class = Intercept), #he thinks 1 is too much but meh. HE tends to be skeptical, data to persuade, så set mean to 0, and how uncertain are we about the mean being 0? we'll do a prior pred check.
-  prior(normal(0, .3 ), class = sd) # we do > sd(MA_d$EffectSize, na.rm = T), we want our prior to capture this variance. It should take the values at face values, but if it's very different from the other studies, it should shrink. Ww say .3, so we say variability op to .6 is quit likely, but shirnking participatns that are too far on that axis
+  prior(normal(0,1.01), class = Intercept), #he thinks 1 is too much but meh. HE tends to be skeptical, data to persuade, så set mean to 0, and how uncertain are we about the mean being 0? we'll do a prior pred check.
+  prior(exponential( 1 ), class = sd), # we do > sd(MA_d$EffectSize, na.rm = T), we want our prior to capture this variance. It should take the values at face values, but if it's very different from the other studies, it should shrink. Ww say .3, so we say variability op to .6 is quit likely, but shirnking participatns that are too far on that axis
+  prior(gamma(2,0.1), class = nu) # default
 )
 
 MA_m0 <- brm(
   MA_f,
   data = MA_d,
-  family = gaussian(),
+  family = student(),
   prior = MA_prior,
   sample_prior = "only",
   chains = 2,
@@ -106,11 +108,11 @@ pp_check(MA_m0, nsamples = 100)
 MA_m1 <- brm(
   MA_f,
   data = MA_d,
-  family = gaussian(),
+  family = student(),
   prior = MA_prior,
   sample_prior = T,
   chains = 2,
-  cores = 2,
+  cores = 4,
   file = "MA_m1"
 )
 
@@ -501,41 +503,51 @@ Step 4: Now re-run the model with the meta-analytic prior
 - N.B. you need to assess the meta-analytic informed prior (prior pred checks, prior-posterior update checks) and if relevant you can always change it in motivated ways (e.g. too confident, doesn't let the model actually learn from the data, so increase sd)
 
 ```{r}
-###Now trying to add some random (varying) effects
-ass_MA_gauss_f1 <- bf(IQR_z ~ 0 + Diagnosis + (1|Language) + (1|Language:ID))
+###Starting with the model formula
+ass_MA_gauss_f1 <- bf(IQR_z ~ 1 + Diagnosis + (1|Language) + (1|Language:ID))
 
 get_prior(ass_MA_gauss_f1, data = ass3, family = gaussian()) 
 
-ass_f1_prior <- c(
-  prior(normal(-0.47, 0.38), class = b),
+ass_MA_gauss_prior_f1 <- c(
+  prior(normal(0,1), class = Intercept),
+  prior(normal(-0.47, 0.22), class = b),
   prior(exponential(1), class = sd),
   prior(exponential(1), class = sigma)
 )
 
-ass_m1_prior <- brm(
-  ass_f1,
+ass_MA_gauss_prior_m1 <- brm(
+  ass_MA_gauss_f1,
   data = ass3,
   family = gaussian(),
-  prior = ass_f1_prior,
+  prior = ass_MA_gauss_prior_f1,
   sample_prior = "only",
   chains = 2,
   cores =4,
   backend="cmdstanr",
-  threads = threading(2),
+  threads = threading(2)
+ # file_refit = "on_change",
+ # control = list(
+ # adapt_delta = 0.99,
+ # max_treedepth = 20
+ # )
   )
 
-pp_check(ass_m1_prior, nsamples = 50) #Looks not toooo bad
+pp_check(ass_MA_gauss_prior_m1, nsamples = 50)
 
-ass_m1_post <- brm(
-  ass_f1,
+ass_MA_gauss_post_m1 <- brm(
+  ass_MA_gauss_f1,
   data = ass3,
   family = gaussian(),
-  prior = ass_f1_prior,
+  prior = ass_MA_gauss_prior_f1,
   sample_prior = T,
   chains = 2,
-  cores = 4,
+  cores =4,
   backend="cmdstanr",
   threads = threading(2),
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20
+  )
   )
 
 # Warning message:
@@ -546,13 +558,17 @@ ass_m1_post <- brm(
 #   * Reparameterizing the model (e.g. using a non-centered parameterization)
 #   * Using informative or weakly informative prior distributions 
 
-pp_check(ass_m1_post, nsamples = 50)
+pp_check(ass_MA_gauss_post_m1, nsamples = 50)
 
-conditional_effects(ass_m1_post) #Now the difference doesn't seem too certain
+conditional_effects(ass_MA_gauss_post_m1) #Now the difference doesn't seem too certain
 
-posterior_gauss <- posterior_samples(ass_m1_post)
+posterior_gauss <- posterior_samples(ass_MA_gauss_post_m1)
 
-
+posterior_gauss %>%  #Posterior-update check
+  pivot_longer(c(prior_nu, nu), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
 
 
 
