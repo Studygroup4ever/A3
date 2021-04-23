@@ -1,0 +1,1116 @@
+---
+title: "Assignment 3 - Applying meta-analytic priors"
+author: "Group X"
+date: "4/12/2021"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Assignment 3
+
+In this assignment we do the following:
+- we run a Bayesian meta-analysis of pitch variability in ASD, based on previously published literature
+- we analyze pitch variability in ASD in two new studies using both a conservative and a meta-analytic prior
+- we assess the difference in model quality and estimates using the two priors. 
+
+The questions you need to answer are: What are the consequences of using a meta-analytic prior? Evaluate the models with conservative and meta-analytic priors. Discuss the effects on estimates. Discuss the effects on model quality. Discuss the role that meta-analytic priors should have in scientific practice. Should we systematically use them? Do they have drawbacks? Should we use them to complement more conservative approaches? How does the use of meta-analytic priors you suggest reflect the skeptical and cumulative nature of science?
+
+### Step by step suggestions
+
+Step 1: Perform a meta-analysis of pitch variability from previous studies of voice in ASD
+- N.B. all you need is in the two intro videos
+- the data is available as Ass3_MetaAnalysisData.tsv
+- You should calculate Effect size (cohen's d) and Standard Error (uncertainty in the Cohen's d) per each study, using escalc() from the metafor package (also check the livecoding intro).
+- N.B. for the purpose of the assignment we're only interested in getting a meta-analytic effect size for the meta-analytic prior (and not e.g. all the stuff on publication bias). See a brms tutorial here: https://vuorre.netlify.com/post/2016/09/29/meta-analysis-is-a-special-case-of-bayesian-multilevel-modeling/ The formula is EffectSize | se(StandardError) ~ 1 + (1 | Paper). Don't forget prior definition, model checking, etc.
+- N.B. the livecoding video is not perfect, you *can* (but don't have to) improve it: use a t-student likelihood, test the effects of the priors and refine them, check the robustness of results to more or less skeptical priors, etc. 
+- Write down the results of the meta-analysis in terms of a prior for step 2.
+
+
+```{r}
+# Load packages
+pacman::p_load(metafor, 
+               tidyverse, 
+               stringi, 
+               readr,
+               brms,
+               rethinking,
+               viridis,
+               bayesplot,
+               loo)
+
+# Plot themes
+theme_set(theme_minimal())
+
+```
+
+```{r}
+# Load the data
+d <- read.delim('Ass3_MetaAnalysisData.tsv')
+
+d <- d %>% 
+  mutate(
+    PitchVariabilityASD_Mean = as.numeric(PitchVariabilityASD_Mean),
+    PitchVariabilityTD_Mean = as.numeric(PitchVariabilityTD_Mean),
+    PitchVariabilityASD_SD = as.numeric(PitchVariabilityASD_SD),
+    PitchVariabilityTD_SD = as.numeric(PitchVariabilityTD_SD),
+    Paper = as.factor(Paper)
+  ) %>% subset(!is.na(Year))
+
+```
+
+```{r}
+# Familiarizing ourselves with the data
+
+# Formatting data
+long_SD <- d %>% gather(condition, SD, PitchMeanASD_SD, PitchMeanTD_SD, factor_key=TRUE) %>% select(SD)
+
+long <- d %>% mutate(n = c(1:nrow(d)),
+                     direction = factor(ifelse(PitchMeanASD_Mean > PitchMeanTD_Mean, 'ASD>TD', 'ASD<TD'))) %>% 
+  gather(condition, Mean, PitchMeanASD_Mean, PitchMeanTD_Mean, factor_key=TRUE) %>% 
+  mutate(Diagnosis = ifelse( condition == 'PitchMeanASD_Mean', 'ASD', 'TD'),
+         SD = long_SD$SD,
+         Mean_scale = scale(Mean)) 
+
+long1 <- long[complete.cases(long['Mean']),]
+
+d1 <- d[complete.cases(d['PitchMeanTD_Mean']),] %>% 
+  mutate(n = 1:nrow(d[complete.cases(d['PitchMeanTD_Mean']),]),
+         colorTD = 'TD',
+         colorASD = 'ASD',
+         Diff_pct = (PitchMeanASD_Mean - PitchMeanTD_Mean)/mean(PitchMeanASD_Mean+PitchMeanTD_Mean))
+
+new_labels <- as_labeller(
+  c(
+    '1' = "(Sharda, et al., 2010)",
+    '2' = "(Filipe, et al., 2014)" ,
+    '3' = "(Filipe, et al., 2014)",
+    '4' = "(Diehl, et al., 2009)",
+    '5' = "(Diehl, et al., 2009)",
+    '6' = "(Scharfstein, et al., 2011)",
+    '12' = "(Grossman, et al., 2010)",
+    '13' = "(Bonneh, et al., 2011)" ,
+    '15' = "(Nadig & Shaw, 2012)",
+    '16' = "(Nadig & Shaw, 2012)" ,
+    '21' = "(Brisson et al 2014)" ,
+    '26' = "(Chan et al 2016)" ,
+    '29' = "(Quigley et al 2016)",
+    '30' = "(Quigley et al 2016)",
+    '31' = "(Dahlgren et al 2018)" ,
+    '32' = "(Fusaroli, Lambrechts, et al., 2016)",
+    '33' = "(Fusaroli, Lambrechts, et al., 2016)",
+    '34' = "(Fusaroli, et al., 2013)",
+    '35' = "(Fusaroli, et al., 2013)",
+    '36' = "(Fusaroli, et al., 2013)",
+    '37' = "(Fusaroli, Grossman, et al., 2015)",
+    '38' = "(Fusaroli, Grossman, et al., 2015)",
+    '39' = "(Fusaroli, Grossman, et al., 2015)",
+    '40' = "(Hubbard, et al., 2017)",
+    '41' = "(Seidl et al., 2018)"
+  )
+)
+
+
+# Building plots
+
+long1 %>% 
+  ggplot(aes(x = Diagnosis)) +
+  geom_point(aes(y = Mean, 
+                 color = direction,
+                 size = ifelse(Diagnosis=='ASD', ASD_N, TD_N)), 
+             shape = 1) +
+  geom_linerange(aes(ymin = Mean - SD, 
+                     ymax = Mean + SD, 
+                     color = direction)) +
+  facet_wrap(~ n, 
+             scales = "free",
+             labeller = new_labels) +
+  ylab('Mean Pitch Variability') +
+  xlab('Diagnosis')  +   
+  scale_color_manual(values = c('ASD>TD' = 'royalblue', 
+                                'ASD<TD' = 'firebrick'),
+                     name = 'Direction of Results') +
+  scale_size(name = 'Sample Size')
+
+d1 %>%  ggplot() + 
+  geom_point(aes(x = n + 0.3, 
+                 y = PitchMeanTD_Mean,
+                 color = colorTD)) +
+  geom_linerange(aes(x = n + 0.3,
+                     ymin = PitchMeanTD_Mean - PitchMeanTD_SD, 
+                     ymax = PitchMeanTD_Mean + PitchMeanTD_SD,
+                     color = colorTD)) +
+  geom_point(aes(x = n,
+                 y = PitchMeanASD_Mean,
+                 color = colorASD), 
+             shape = 1) +
+  geom_linerange(aes(x = n,
+                     ymin = PitchMeanASD_Mean - PitchMeanASD_SD, 
+                     ymax = PitchMeanASD_Mean + PitchMeanASD_SD,
+                     color = colorASD)) +
+  geom_vline(xintercept = c(1:nrow(d1) + 0.65), alpha = 0.3) +
+  geom_vline(xintercept = nrow(d1) + 0.59) +
+  # geom_hline(yintercept = (mean(d1$PitchMeanTD_Mean) +
+  #                          mean(d1$PitchMeanASD_Mean))/2, lty = 2) +
+  scale_x_discrete(limits = factor(1:nrow(d1)), 
+                   name = 'Study',
+                   labels = d1$Paper) +
+  theme_classic() + 
+  ylab('Mean Pitch Variability') +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), 
+                     name = 'Diagnosis')
+
+d1 %>% 
+  ggplot() +
+  geom_point(aes(x = PitchMeanTD_Mean, 
+                 y = PitchMeanTD_SD, 
+                 color = colorTD,
+                 size = TD_N), 
+             shape = 1) +
+  geom_point(aes(x = PitchMeanASD_Mean,
+                 y = PitchMeanASD_SD,
+                 color = colorASD,
+                 size = ASD_N),
+             shape = 1) +
+  scale_size(name = 'Sample Size') +
+  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'),
+                     name = 'Diagnosis') +
+  xlab('Pitch Mean') +
+  ylab('Pitch SD')
+
+d1 %>% 
+  ggplot() +
+  geom_point(aes(x = Year, 
+                 y = Diff_pct, 
+                 size = TD_N + ASD_N),
+             shape = 1) +
+  geom_hline(yintercept = 0,
+             lty = 2) +
+  scale_size(name = 'Sample Size') +
+  xlab('Year of Publication') +
+  ylab('Relative Difference in Pitch Variability')
+
+long1 %>% 
+  ggplot(aes(color = Diagnosis)) +
+  geom_point(aes(x = Year, 
+                 y = Mean, 
+                 size = ifelse(Diagnosis=='ASD', ASD_N, TD_N)),
+             shape = 1) +
+  scale_size(name = 'Sample Size') +
+  xlab('Year of Publication') +
+  ylab('Scaled Mean Pitch Variability') +
+  scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), name = 'Diagnosis')
+  
+
+```
+
+
+```{r}
+# Meta analysis using escalc
+d <- escalc(
+  measure = "SMD", # stand mean diff
+  n1i = TD_N,
+  n2i = ASD_N,
+  m1i = PitchVariabilityTD_Mean,
+  m2i = PitchVariabilityASD_Mean,
+  sd1i = PitchVariabilityTD_SD,
+  sass3_clean_bi = PitchVariabilityASD_SD,
+  data = d,
+  slab = Paper)
+
+d <- d %>% 
+  mutate(StandardError = sqrt(vi)) %>% 
+  rename(EffectSize = yi)
+
+(ma_out <- rma(data = d, yi = EffectSize, vi = vi, slab = d$Paper))
+
+summary(d$StandardError, na.rm = T)
+
+summary(d$EffectSize, na.rm = T)
+
+dens(d$EffectSize)
+```
+
+```{r}
+# Plots of meta-analysis
+
+# Forest plot
+forest(ma_out, slab = d$Paper)
+
+# Funnel plots
+d[complete.cases(d['EffectSize']),] %>% 
+  ggplot(aes(x = EffectSize, y = StandardError)) +
+  geom_point(aes(color = Author), size = 3) +
+  geom_vline(xintercept = coef(ma_out), lty = 2) +
+  geom_abline(intercept = coef(ma_out)/2, 
+              slope = -0.5) +
+  geom_abline(intercept = -coef(ma_out)/2,
+              slope = 0.5) +
+  ylim(0.483, 0.022) +
+  xlim(coef(ma_out) - 1.1, coef(ma_out) + 1.1)
+
+funnel(ma_out)
+
+```
+
+
+```{r}
+# rebuild_cmdstan(
+#   dir = cmdstan_path(),
+#   cores = getOption("mc.cores", 2),
+#   quiet = FALSE,
+#   timeout = 600
+# )
+
+# cleaning data
+d_clean <- d[complete.cases(d['EffectSize']),]
+d_clean$Paper <- as.factor(d_clean$Paper)
+```
+
+
+```{r}
+# Priors
+# the two models
+f1 <- bf(EffectSize | se(StandardError) ~ 1 + (1 | Paper))
+
+# get priors
+get_prior(f1, 
+          data = d_clean)
+
+get_prior(f1, 
+          data = d_clean,
+          family = student)
+
+# model priors
+p1_norm <- c(
+  prior(normal(-0.5, 0.25), class = Intercept), # mean at -0.5 because that's around the SME, sd set to 0.25 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+  prior(exponential(1), class = sd, group = Paper)
+  )
+
+p1_stud <- c(
+  prior(student_t(10, -0.5, 0.25), class = Intercept), # mean at -0.5 because that's around the SME, sd set to 0.25 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
+  prior(exponential(1), class = sd, group = Paper),
+  prior(normal(0, 30), class = nu)
+  )
+
+```
+
+```{r}
+# Building normal model prior
+m1_norm_prior <- brm(
+  formula = f1,
+  data = d_clean,
+  family = gaussian,
+  prior = p1_norm,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  threads = threading(2),
+  core = 2
+)
+
+# Building normal model full
+
+m1_norm <- brm(
+  formula = f1,
+  data = d_clean,
+  family = gaussian,
+  prior = p1,
+  sample_prior = T,
+  backend = "cmdstanr",
+  threads = threading(2),
+  core = 2
+)
+
+# Building student model prior
+
+m1_stud_prior <- brm(
+  formula = f1,
+  data = d_clean,
+  family = student,
+  prior = p1_stud,
+  sample_prior = "only",
+  backend = "cmdstanr",
+  threads = threading(2),
+  core = 2
+)
+
+# Building model student full
+
+m1_stud <- brm(
+  formula = f1,
+  data = d_clean,
+  family = student,
+  prior = p1_stud,
+  sample_prior = T,
+  backend = "cmdstanr",
+  threads = threading(2),
+  core = 2
+)
+
+
+pp_priornorm <- pp_check(m1_norm_prior, nsamples = 100)
+
+pp_postnorm <- pp_check(m1_norm, nsamples = 100)
+
+pp_priorstud <- pp_check(m1_stud_prior, nsamples = 100)
+
+pp_poststud <- pp_check(m1_stud, nsamples = 100)
+
+pp_priornorm 
+pp_postnorm
+pp_priorstud
+pp_poststud
+```
+
+
+```{r}
+# Checking model
+
+# Sampling from the posterior
+posterior_m1_norm <- posterior_samples(m1_norm) 
+posterior_m1_stud <- posterior_samples(m1_stud) 
+
+# Creating a long format of the posterior to plot the different distributions together
+posterior_m1_norm %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
+
+posterior_m1_norm %>% 
+  pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
+
+posterior_m1_stud %>% pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal() + xlim(-2.5,2.5)
+
+posterior_m1_stud %>% 
+  pivot_longer(c(sd_Paper__Intercept, prior_sd_Paper), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
+
+posterior_m1_stud %>% 
+  pivot_longer(c(nu, prior_nu), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()
+
+m1_norm <- add_criterion(m1_norm, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
+m1_stud <- add_criterion(m1_stud, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
+
+# we can use loo compare since the link is the same
+set.seed(123)
+m1_norm <- add_criterion(m1, c("bayes_R2","loo"))
+
+set.seed(123)
+m1_stud <- add_criterion(m1_stud,criterion = c("bayes_R2", "loo"))
+
+# Throws warning about some pareto-k estimates being too high
+
+# Another way to assess problematic observations
+loo(m1_norm) %>% 
+  pareto_k_ids(threshold = 0.7) 
+
+loo(m1_stud) %>% 
+  pareto_k_ids(threshold = 0.7)
+
+# running efficient approximate leave one out cross validation (LOO) on the models - influential points
+(loo(m1_norm))
+(loo(m1_stud))
+
+# using loo_compare
+loo_compare(m1_norm, m1_stud)
+loo_model_weights(m1_norm, m1_stud)
+
+# summaries
+summary(m1_norm)
+summary(m1_stud)
+```
+
+
+```{r}
+# MCMC Plots and Trace Rank to check mixing. They're mixing well and explore all space. 
+color_scheme_set("viridis")
+
+# Normal Model
+mcmc_trace(m1_norm)+theme_classic()+ggtitle("Main parameters - Normal model, Trace plot")
+mcmc_rank_overlay(m1_norm, pars = "b_Intercept", "sd_Paper__Intercept")+theme_classic()+ggtitle("Main parameters - Normal model, Rank Overlay")
+mcmc_rank_overlay(m1_norm, pars = "r_Paper[(Sharda,.et.al.,.2010),Intercept]")+theme_classic()+ggtitle("r_Paper[(Sharda,.et.al.,.2010),Intercept]")
+mcmc_rank_overlay(m1_norm, pars = "r_Paper[(Kaland,.Krahmer,.&.Swerts,.2012),Intercept]")+theme_classic()+ggtitle("r_Paper[(Kaland,.Krahmer,.&.Swerts,.2012),Intercept]")
+
+# Student Model
+mcmc_trace(m1_stud)+theme_classic()+ggtitle("Main parameters - Normal model, Trace plot")
+mcmc_rank_overlay(m1_stud, pars = "b_Intercept", "sd_Paper__Intercept")+theme_classic()+ggtitle("Main parameters - Normal model, Rank Overlay")
+mcmc_rank_overlay(m1_stud, pars = "r_Paper[(Sharda,.et.al.,.2010),Intercept]")+theme_classic()+ggtitle("r_Paper[(Sharda,.et.al.,.2010),Intercept]")
+mcmc_rank_overlay(m1_stud, pars = "r_Paper[(Kaland,.Krahmer,.&.Swerts,.2012),Intercept]")+theme_classic()+ggtitle("r_Paper[(Kaland,.Krahmer,.&.Swerts,.2012),Intercept]")
+
+```
+
+Step 2: Analyse pitch variability in ASD in two new studies for which you have access to all the trials (not just study level estimates)
+- the data is available as Ass3_data.csv. Notice there are 2 studies (language us, and language dk), multiple trials per participant, and a few different ways to measure pitch variability (if in doubt, focus on pitch IQR, interquartile range of the log of fundamental frequency)
+- Also, let's standardize the data, so that they are compatible with our meta-analytic prior (Cohen's d is measured in SDs).
+- Is there any structure in the dataset that we should account for with random/varying effects? How would you implement that? Or, if you don't know how to do bayesian random/varying effects or don't want to bother, is there anything we would need to simplify in the dataset?
+
+```{r}
+# read in data
+ass3 <- read_csv("Ass3_data.csv")
+
+# fixing variables
+ass3 <- ass3 %>% 
+  mutate(
+    ID = as.factor(ID),
+    Diagnosis = as.factor(Diagnosis),
+    Gender = as.factor(Gender),
+    Language = as.factor(Language),
+    IQR_z = scale(Pitch_IQR))
+
+# remove NA's
+ass3 <- ass3 %>% subset(!is.na(ID))
+
+# remove outliers
+ass3_clean <- filter(ass3, IQR_z < 3 & IQR_z > -3)
+
+# group by ID and count
+ass3_clean %>% 
+  group_by(ID) %>% 
+  count(ID, sort = T) #< 15 trials per participant
+
+# checking number of participants
+aggregate(ID ~ Language + Diagnosis, data = ass3_clean, FUN = length)
+
+# getting outputs for the report and inspecting the data
+str(ass3_clean)
+
+ass3_clean %>% 
+  group_by(Diagnosis, Language) %>% 
+  summarize(mean_IQR_z = mean(IQR_z),
+            sd_IQR_z = sd(IQR_z))
+
+# boxplot
+ass3_clean_b <- ass3_clean
+
+ass3_clean_b$IQR_std <- scale(ass3_clean_b$Pitch_IQR)
+
+ggplot(ass3_clean_b, aes(y = IQR_std, x = Language, color = Diagnosis)) + 
+  geom_jitter()+
+  theme_minimal()
+
+ass3_clean_b <- ass3_clean_b[complete.cases(ass3_clean_b["ID"]),]
+
+ass3_clean_b <- ass3_clean_b %>% 
+  group_by(ID,Language) %>% 
+  mutate(meanIQR_std = mean(IQR_std)) %>% 
+  ungroup(ID)
+
+aggregate(ID~ Diagnosis + Language, data = ass3_clean_b, FUN = length)
+
+unique(ass3_clean_b$ID)
+
+ggplot(ass3_clean_b, aes(y = meanIQR_std, x = Language, color = Diagnosis)) + 
+  geom_boxplot()+
+  theme_minimal()+
+  ggtitle("Pitch variability for the two studies, collapsed mean per ID")
+
+```
+
+Step 3: Build a regression model predicting Pitch variability from Diagnosis.
+- how is the outcome distributed? (likelihood function). NB. given we are standardizing, and the meta-analysis is on that scale, gaussian is not a bad assumption, but check t-student as well. Lognormal would require us to convert the prior to that scale.
+- how are the parameters of the likelihood distribution distributed? Which predictors should they be conditioned on? Start simple, with Diagnosis only. Add other predictors only if you have the time and energy!
+- use a skeptical/conservative prior for the effects of diagnosis. Remember you'll need to motivate it, test its predictions (prior predictive checks), its impact on the posteriors (prior posterior updates checks).
+- Evaluate model quality. Describe and plot the estimates. 
+
+```{r}
+# Now trying to add some random (varying) effects
+
+# Model formula
+ass_f1 <- bf(IQR_z ~ 0 + Diagnosis + (1|Language) + (1|Language:ID))
+
+# Defining priors
+get_prior(ass_f1, data = ass3, family = gaussian())
+
+ass_f1_prior <- c(
+  prior(normal(0, 0.1), class = b),
+  prior(exponential(1), class = sd),
+  prior(exponential(1), class = sigma)
+)
+
+ass_m1_prior <- brm(
+  ass_f1,
+  data = ass3,
+  family = gaussian(),
+  prior = ass_f1_prior,
+  sample_prior = "only",
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20),
+  chains = 4,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+# Prior predictive check
+pp_check(ass_m1_prior, nsamples = 50) + xlim(-10,10)
+
+# Running model
+ass_m1_post <- brm(
+  ass_f1,
+  data = ass3,
+  family = gaussian(),
+  prior = ass_f1_prior,
+  sample_prior = T,
+  chains = 4,
+  cores = 2,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20),
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+# Posterior predictive check
+pp_check(ass_m1_post, nsamples = 50) + xlim(-5,5)
+
+# Check differences
+conditional_effects(ass_m1_post) # Now the difference doesn't seem too certain
+
+# Posterior learning plot
+posterior_gauss <- posterior_samples(ass_m1_post)
+
+posterior_gauss %>% 
+  pivot_longer(c(b_DiagnosisASD, b_DiagnosisTD, prior_b), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Posterior learning plot - Model for step 3")
+
+posterior_gauss %>% 
+  pivot_longer(c(prior_sigma, sigma), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Sigma: Posterior learning plot - Model for step 3")+
+  scale_fill_manual(values = c('prior_sigma' = 'royalblue', 'sigma' = 'firebrick'), name = 'Estimates')
+
+posterior_gauss %>% 
+  pivot_longer(c(prior_sd_Language, sd_Language__Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Standard deviation: Posterior learning plot - Model for step 3")+
+  scale_fill_manual(values = c('prior_sd_Language' = 'royalblue', 'sd_Language__Intercept' = 'firebrick'), name = 'Estimates')
+
+posterior_gauss %>% 
+  pivot_longer(c(`prior_sd_Language:ID`, `sd_Language:ID__Intercept`), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Standard deviation_LANG:ID: Posterior learning plot - Model for step 3")+
+  scale_fill_manual(values = c(`prior_sd_Language:ID` = 'royalblue',`sd_Language:ID__Intercept` = 'firebrick'), name = 'Estimates')
+
+ass_m1_post
+```
+
+```{r}
+# Model formula
+ass_f2 <- bf(IQR_z ~ 0 + Diagnosis + (1|Language) + (1|Language:ID))
+
+# Defining priors
+get_prior(ass_f2, data = ass3, family = student)
+
+ass_f2_prior <- c(
+  prior(normal(0, 0.1), class = b),
+  prior(exponential(1), class = sd),
+  prior(exponential(1), class = sigma),
+  prior(normal(15,7.5), class = nu)
+)
+
+ass_m2_prior <- brm(
+  ass_f2,
+  data = ass3,
+  family = student,
+  prior = ass_f2_prior,
+  sample_prior = "only",
+  chains = 4,
+  cores = 2,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20),
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+# Prior predictive check
+pp_check(ass_m2_prior, nsamples = 50) + xlim(-10,10)
+
+# Running model
+ass_m2_post <- brm(
+  ass_f2,
+  data = ass3,
+  family = student,
+  prior = ass_f2_prior,
+  sample_prior = T,
+  chains = 4,
+  cores = 2,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20),
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+# Posterior predictive check
+pp_check(ass_m2_post, nsamples = 50) + xlim(-3,5)
+
+# Check differences 
+conditional_effects(ass_m2_post)
+
+# Posterior learning plot
+posterior_stud <- posterior_samples(ass_m2_post)
+
+posterior_stud %>% 
+  pivot_longer(c(b_DiagnosisASD, b_DiagnosisTD, prior_b), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Posterior learning plot - Student Model for step 3")
+
+posterior_stud %>% 
+  pivot_longer(c(prior_sigma, sigma), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Sigma: Posterior learning plot - Student Model for step 3")+
+  scale_fill_manual(values = c('prior_sigma' = 'royalblue', 'sigma' = 'firebrick'), name = 'Estimates')
+
+posterior_stud %>% 
+  pivot_longer(c(prior_sd_Language, sd_Language__Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Standard deviation_Lang: Posterior learning plot - Student Model for step 3")+
+  scale_fill_manual(values = c('prior_sd_Language' = 'royalblue', 'sd_Language__Intercept' = 'firebrick'), name = 'Estimates')
+
+posterior_stud %>% 
+  pivot_longer(c(`prior_sd_Language:ID`, `sd_Language:ID__Intercept`), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Standard deviation_LANG:ID: Posterior learning plot - Student Model for step 3")+
+  scale_fill_manual(values = c(`prior_sd_Language:ID` = 'royalblue',`sd_Language:ID__Intercept` = 'firebrick'), name = 'Estimates')
+
+posterior_stud %>% 
+  pivot_longer(c(prior_nu, nu), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("nu: Posterior learning plot - Student Model for step 3")+
+  scale_fill_manual(values = c('prior_nu' = 'royalblue','nu' = 'firebrick'), name = 'Estimates')
+
+ass_m2_post
+```
+
+
+```{r}
+# MCMC Trace + Overlay chain checks. All look good. 
+color_scheme_set("viridis")
+
+# Model 1
+mcmc_trace(ass_m1_post, 
+           pars = c("b_DiagnosisASD", 
+                    "b_DiagnosisTD", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'sigma')) +
+  theme_classic() 
+
+mcmc_rank_overlay(ass_m1_post,
+                  pars = c("b_DiagnosisASD", 
+                    "b_DiagnosisTD", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'sigma')) + 
+  theme_classic()
+
+# Model 2
+mcmc_trace(ass_m2_post, 
+           pars = c("b_DiagnosisASD", 
+                    "b_DiagnosisTD", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'nu',
+                    'sigma')) +
+  theme_classic() 
+
+mcmc_rank_overlay(ass_m2_post,
+                  pars = c("b_DiagnosisASD", 
+                    "b_DiagnosisTD", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'nu',
+                    'sigma')) + 
+  theme_classic()
+
+
+```
+
+```{r}
+ass_m1_post
+ass_m2_post
+```
+
+
+```{r}
+# Adding loo to compare models
+set.seed(47)
+
+ass_m1_post <- add_criterion(ass_m1_post, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
+ass_m2_post <- add_criterion(ass_m2_post, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
+
+# We can use loo compare
+loo_compare(ass_m1_post, ass_m2_post)
+loo_model_weights(ass_m1_post, ass_m2_post)
+
+loo(ass_m1_post) %>% 
+  pareto_k_ids(threshold = 0.7)
+
+loo(ass_m2_post) %>% 
+  pareto_k_ids(threshold = 0.7)
+
+dens(ass_m1_post$criteria$loo$diagnostics$pareto_k)
+dens(ass_m2_post$criteria$loo$diagnostics$pareto_k)
+
+(loo(ass_m1_post))
+(loo(ass_m2_post))
+```
+
+Step 4: Now re-run the model with the meta-analytic prior
+- Evaluate model quality. Describe and plot the estimates. 
+- N.B. you need to assess the meta-analytic informed prior (prior pred checks, prior-posterior update checks) and if relevant you can always change it in motivated ways (e.g. too confident, doesn't let the model actually learn from the data, so increase sd)
+
+```{r}
+# Re-running the model with the meta-analytic prior
+# relevelling the variable to have TD as the base level 
+ass3$Diagnosis <- relevel(ass3$Diagnosis, ref = "TD")
+levels(ass3$Diagnosis)
+
+# Formula
+f1_mp <- bf(IQR_z ~ 1 + Diagnosis + (1|Language) + (1|Language:ID))
+
+# Defining prior
+get_prior(f1_mp, data = ass3, family = gaussian)
+
+p1_mp <- c(
+  prior(normal(0, 1), class = Intercept),
+  prior(normal(-0.48, 0.20), class = b),
+  prior(exponential(1), class = sd),
+  prior(normal(0.36, 0.18), class = sigma)
+)
+
+m1_mp_prior <- brm(
+  f1_mp,
+  data = ass3,
+  family = gaussian(),
+  prior = p1_mp,
+  sample_prior = "only",
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20),
+  chains = 4,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+# Prior predictive check
+pp_check(m1_mp_prior, nsamples = 50) + xlim(-10,10)
+
+# Running model
+m1_mp <- brm(
+  f1_mp,
+  data = ass3,
+  family = gaussian(),
+  prior = p1_mp,
+  sample_prior = T,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20),
+  chains = 4,
+  cores = 2,
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+# Posterior predictive check
+pp_check(m1_mp, nsamples = 50) + xlim(-5,5)
+
+# Check the conditional effects
+conditional_effects(m1_mp) #Now the difference doesn't seem too certain
+
+# Posterior learning plot
+samples_gauss <- posterior_samples(m1_mp)
+
+samples_gauss %>% 
+  pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Intercept: Posterior learning plot - Normal Model for step 4")+
+  scale_fill_manual(values = c('prior_Intercept' = 'royalblue','Intercept' = 'firebrick'), name = 'Estimates')
+
+samples_gauss %>% 
+  pivot_longer(c(b_DiagnosisASD, prior_b), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Beta_Diagnosis: Posterior learning plot - Normal Model for step 4")+
+  scale_fill_manual(values = c('prior_b' = 'royalblue','b_DiagnosisASD' = 'firebrick'), name = 'Estimates')
+
+samples_gauss %>% 
+  pivot_longer(c(prior_sigma, sigma), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Sigma: Posterior learning plot - Normal Model for step 4")+
+  scale_fill_manual(values = c('prior_sigma' = 'royalblue','sigma' = 'firebrick'), name = 'Estimates')
+
+samples_gauss %>% 
+  pivot_longer(c(prior_sd_Language, sd_Language__Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("StandardDeviation_LANG: Posterior learning plot - Normal Model for step 4")+
+  scale_fill_manual(values = c('prior_sd_Language' = 'royalblue','sd_Language__Intercept' = 'firebrick'), name = 'Estimates')
+
+samples_gauss %>% 
+  pivot_longer(c(`prior_sd_Language:ID`, `sd_Language:ID__Intercept`), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("StandardDeviation:ID_LANG: Posterior learning plot - Normal Model for step 4")+
+  scale_fill_manual(values = c(`prior_sd_Language:ID` = 'royalblue',`sd_Language:ID__Intercept` = 'firebrick'), name = 'Estimates')
+
+m1_mp
+```
+
+```{r}
+# Formula for model 2
+f2_mp <- bf(IQR_z ~ 1 + Diagnosis + (1|Language) + (1|Language:ID))
+
+# Defining priors
+get_prior(f2_mp, data = ass3, family = student)
+
+p2_mp <- c(
+  prior(normal(0, 1), class = Intercept),
+  prior(normal(-0.48, 0.20), class = b),
+  prior(exponential(1), class = sd),
+  prior(normal(0.36, 0.18), class = sigma),
+  prior(gamma(2, 0.1), class = nu)
+)
+
+m2_mp_prior <- brm(
+  f2_mp,
+  data = ass3,
+  family = student,
+  prior = p2_mp,
+  sample_prior = "only",
+  chains = 4,
+  cores = 2,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20),
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+# Prior predictive check
+pp_check(m2_mp_prior, nsamples = 50) + xlim(-10,10)
+
+# Running model
+m2_mp <- brm(
+  f2_mp,
+  data = ass3,
+  family = student,
+  prior = p2_mp,
+  sample_prior = T,
+  chains = 4,
+  cores = 2,
+  control = list(
+    adapt_delta = 0.99,
+    max_treedepth = 20),
+  backend="cmdstanr",
+  threads = threading(2)
+)
+
+# Posterior predictive check
+pp_check(m2_mp, nsamples = 50) + xlim(-3,5)
+
+# Check differences
+conditional_effects(m2_mp)
+
+# Posterior update plots
+samples_stud <- posterior_samples(m2_mp)
+
+samples_stud %>% 
+  pivot_longer(c(Intercept, prior_Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Intercept: Posterior learning plot - Student Model for step 4")+
+  scale_fill_manual(values = c('prior_Intercept' = 'royalblue','Intercept' = 'firebrick'), name = 'Estimates')
+
+samples_stud %>% 
+  pivot_longer(c(b_DiagnosisASD, prior_b), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Beta_Diagnosis: Posterior learning plot - Student Model for step 4")+
+  scale_fill_manual(values = c('prior_b' = 'royalblue','b_DiagnosisASD' = 'firebrick'), name = 'Estimates')
+
+samples_stud %>% 
+  pivot_longer(c(prior_sigma, sigma), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Sigma: Posterior learning plot - Student Model for step 4")+
+  scale_fill_manual(values = c('prior_sigma' = 'royalblue','sigma' = 'firebrick'), name = 'Estimates')
+
+samples_stud %>% 
+  pivot_longer(c(prior_sd_Language, sd_Language__Intercept), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("StandardDeviation_LANG: Posterior learning plot - Student Model for step 4")+
+  scale_fill_manual(values = c('prior_sd_Language' = 'royalblue','sd_Language__Intercept' = 'firebrick'), name = 'Estimates')
+
+samples_stud %>% 
+  pivot_longer(c(`prior_sd_Language:ID`, `sd_Language:ID__Intercept`), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("StandardDeviation:ID_LANG: Posterior learning plot - Student Model for step 4")+
+  scale_fill_manual(values = c(`prior_sd_Language:ID` = 'royalblue',`sd_Language:ID__Intercept` = 'firebrick'), name = 'Estimates')
+
+samples_stud %>% 
+  pivot_longer(c(prior_nu, nu), names_to = "Estimates") %>%
+  ggplot(aes(fill = Estimates)) +
+  geom_density(aes(value), alpha = 0.3) +
+  theme_minimal()+
+  ggtitle("Nu: Posterior learning plot - Student Model for step 4")+
+  scale_fill_manual(values = c('prior_nu' = 'royalblue','nu' = 'firebrick'), name = 'Estimates')
+
+m2_mp
+```
+
+
+```{r}
+# MCMC Trace plots + Overlays
+color_scheme_set("viridis")
+
+# Model 1
+mcmc_trace(m1_mp, 
+           pars = c("b_DiagnosisASD", 
+                    "Intercept", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'sigma')) +
+  theme_classic() 
+
+mcmc_rank_overlay(m1_mp,
+                  pars = c("b_DiagnosisASD", 
+                    "Intercept", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'sigma')) + 
+  theme_classic()
+
+# Model 2
+mcmc_trace(m2_mp, 
+           pars = c("b_DiagnosisASD", 
+                    "Intercept", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'nu',
+                    'sigma')) +
+  theme_classic() 
+
+mcmc_rank_overlay(m2_mp,
+                  pars = c("b_DiagnosisASD", 
+                    "Intercept", 
+                    'sd_Language__Intercept',
+                    'sd_Language:ID__Intercept',
+                    'nu',
+                    'sigma')) + 
+  theme_classic()
+
+```
+
+```{r}
+
+m1_mp
+m2_mp
+
+```
+
+
+```{r}
+set.seed(47)
+
+m1_mp <- add_criterion(m1_mp, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
+
+m2_mp <- add_criterion(m2_mp, 
+                         criterion = c("bayes_R2", "loo"), 
+                         reloo = T)
+# No problematic observations found. Returning the original 'loo' object.
+
+# we can use loo compare 
+loo_compare(m1_mp, m2_mp)
+loo_model_weights(m1_mp, m2_mp)
+
+loo(m1_mp) %>% 
+  pareto_k_ids(threshold = 0.7)
+# Some Pareto k diagnostic values are too high. See help('pareto-k-diagnostic') for details.
+
+loo(m2_mp) %>% 
+  pareto_k_ids(threshold = 0.7)
+# Some Pareto k diagnostic values are too high. See help('pareto-k-diagnostic') for details.
+
+# checking pareto_k distributions
+dens(m1_mp$criteria$loo$diagnostics$pareto_k)
+dens(m2_mp$criteria$loo$diagnostics$pareto_k)
+
+(loo(m1_mp))
+(loo(m2_mp))
+
+```
+
+Step 5: Compare the models
+- Plot priors and posteriors of the diagnosis effect in both models
+- Compare posteriors between the two models
+- Compare the two models (LOO)
+- Discuss how they compare and whether any of them is best.
+
+```{r}
+
+```
+
+Step 6: Prepare a nice write up of the analysis and answer the questions at the top.
+
