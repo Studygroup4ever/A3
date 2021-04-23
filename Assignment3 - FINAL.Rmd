@@ -3,6 +3,8 @@ title: "Assignment 3 - Applying meta-analytic priors"
 author: "Group X"
 date: "4/12/2021"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 
@@ -59,7 +61,6 @@ d <- d %>%
     PitchVariabilityTD_SD = as.numeric(PitchVariabilityTD_SD),
     Paper = as.factor(Paper)
   ) %>% subset(!is.na(Year))
-
 ```
 
 ```{r}
@@ -211,6 +212,7 @@ long1 %>%
 
 ```{r}
 # Meta analysis using escalc
+d$PitchVariabilityASD_SD
 
 d <- escalc(
   measure = "SMD", # stand mean diff
@@ -219,7 +221,7 @@ d <- escalc(
   m1i = PitchVariabilityTD_Mean,
   m2i = PitchVariabilityASD_Mean,
   sd1i = PitchVariabilityTD_SD,
-  sass3_clean_bi = PitchVariabilityASD_SD,
+  sd2i = PitchVariabilityASD_SD,
   data = d,
   slab = Paper)
 
@@ -260,12 +262,6 @@ funnel(ma_out)
 
 
 ```{r}
-# rebuild_cmdstan(
-#   dir = cmdstan_path(),
-#   cores = getOption("mc.cores", 2),
-#   quiet = FALSE,
-#   timeout = 600
-# )
 
 # cleaning data
 d_clean <- d[complete.cases(d['EffectSize']),]
@@ -294,8 +290,7 @@ p1_norm <- c(
 
 p1_stud <- c(
   prior(student_t(10, -0.5, 0.25), class = Intercept), # mean at -0.5 because that's around the SME, sd set to 0.25 after looking at the summary(d$Effectsize) and looking at minimum / maximum / 1st / 3rd quantile.
-  prior(exponential(1), class = sd, group = Paper),
-  prior(normal(0, 30), class = nu)
+  prior(exponential(1), class = sd, group = Paper)
   )
 
 ```
@@ -319,7 +314,7 @@ m1_norm <- brm(
   formula = f1,
   data = d_clean,
   family = gaussian,
-  prior = p1,
+  prior = p1_norm,
   sample_prior = T,
   backend = "cmdstanr",
   threads = threading(2),
@@ -351,7 +346,6 @@ m1_stud <- brm(
   threads = threading(2),
   core = 2
 )
-
 
 pp_priornorm <- pp_check(m1_norm_prior, nsamples = 100)
 
@@ -413,7 +407,7 @@ m1_stud <- add_criterion(m1_stud,
 
 # we can use loo compare since the link is the same
 set.seed(123)
-m1_norm <- add_criterion(m1, c("bayes_R2","loo"))
+m1_norm <- add_criterion(m1_norm, c("bayes_R2","loo"))
 
 set.seed(123)
 m1_stud <- add_criterion(m1_stud,criterion = c("bayes_R2", "loo"))
@@ -1111,6 +1105,8 @@ Step 5: Compare the models
 - Discuss how they compare and whether any of them is best.
 
 ```{r}
+set.seed(47)
+
 # Renaming posterior samples for better overview 
 posterior_student <- posterior_stud # Posterior sample from model from step 3
 posterior_student_MA <- samples_stud # Posterior sample from model from step 4 w. meta analytic prior
@@ -1142,12 +1138,7 @@ ggplot(posteriors_all, aes(values, fill = Estimate)) +
   geom_density(alpha = 0.3)+
   ggtitle("Posteriors for beta step 3 and 4")
 
-# Comparing
-ass_m1_student_post <- add_criterion(ass_m1_student_post, criterion = c("bayes_R2", "loo"))
-
-ass_MA_student_post_m1 <- add_criterion(ass_MA_student_post_m1, criterion = c("bayes_R2", "loo"))
-
-# Using loo compare
+# Comparing - Using loo compare
 loo_compare(ass_m1_student_post, ass_MA_student_post_m1)
 
 loo_model_weights(ass_m1_student_post, ass_MA_student_post_m1)
