@@ -403,6 +403,7 @@ ass_m1_student_post <- brm(
   )
 
 pp_check(ass_m1_student_post, nsamples = 50)
+ass_m1_student_post
 
 conditional_effects(ass_m1_student_post)
 
@@ -665,6 +666,7 @@ ass_MA_student_post_m1 <- brm(
 #   * Using informative or weakly informative prior distributions 
 
 pp_check(ass_MA_student_post_m1, nsamples = 50)
+ass_MA_student_post_m1
 
 conditional_effects(ass_MA_student_post_m1) #Now the difference doesn't seem too certain
 
