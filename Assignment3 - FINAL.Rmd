@@ -211,6 +211,7 @@ long1 %>%
 
 ```{r}
 # Meta analysis using escalc
+
 d <- escalc(
   measure = "SMD", # stand mean diff
   n1i = TD_N,
@@ -720,6 +721,7 @@ posterior_stud %>%
   scale_fill_manual(values = c('prior_nu' = 'royalblue','nu' = 'firebrick'), name = 'Estimates')
 
 ass_m2_post
+
 ```
 
 
@@ -1109,8 +1111,60 @@ Step 5: Compare the models
 - Discuss how they compare and whether any of them is best.
 
 ```{r}
+# Renaming posterior samples for better overview 
+posterior_student <- posterior_stud # Posterior sample from model from step 3
+posterior_student_MA <- samples_stud # Posterior sample from model from step 4 w. meta analytic prior
+
+# Renaming posterior models
+ass_m1_student_post <- ass_m2_post
+ass_MA_student_post_m1 <- m2_mp
+
+# Finding the difference between experimental groups
+posterior_student$beta_diff <- posterior_student$b_DiagnosisTD - posterior_student$b_DiagnosisASD
+
+posteriors_all <-
+  data.frame(
+    "values" = c(
+      posterior_student$beta_diff,
+      posterior_student_MA$b_DiagnosisASD
+    ),
+    'Estimate' = c(rep(
+      "step 3", length(posterior_student$beta_diff)
+    ), rep(
+      "step 4", length(posterior_student_MA$b_DiagnosisASD)
+    ))
+  )
+
+#View(posteriors_all)
+
+ggplot(posteriors_all, aes(values, fill = Estimate)) +
+  theme_minimal() +
+  geom_density(alpha = 0.3)+
+  ggtitle("Posteriors for beta step 3 and 4")
+
+# Comparing
+ass_m1_student_post <- add_criterion(ass_m1_student_post, criterion = c("bayes_R2", "loo"))
+
+ass_MA_student_post_m1 <- add_criterion(ass_MA_student_post_m1, criterion = c("bayes_R2", "loo"))
+
+# Using loo compare
+loo_compare(ass_m1_student_post, ass_MA_student_post_m1)
+
+loo_model_weights(ass_m1_student_post, ass_MA_student_post_m1)
+#We get some Pareto k warnings saying some values are slightly high
+
+loo(ass_m1_student_post) %>% 
+  pareto_k_ids(threshold = 0.7)
+
+loo(ass_MA_student_post_m1) %>% 
+  pareto_k_ids(threshold = 0.7)
+
+dens(ass_m1_student_post$criteria$loo$diagnostics$pareto_k)
+dens(ass_MA_student_post_m1$criteria$loo$diagnostics$pareto_k)
+
+(loo(ass_m1_student_post))
+(loo(ass_MA_student_post_m1))
 
 ```
-
 Step 6: Prepare a nice write up of the analysis and answer the questions at the top.
 
