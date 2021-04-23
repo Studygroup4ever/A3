@@ -113,9 +113,7 @@ new_labels <- as_labeller(
   )
 )
 
-
 # Building plots
-
 long1 %>% 
   ggplot(aes(x = Diagnosis)) +
   geom_point(aes(y = Mean, 
@@ -205,7 +203,6 @@ long1 %>%
   ylab('Scaled Mean Pitch Variability') +
   scale_color_manual(values = c('TD' = 'royalblue', 'ASD' = 'firebrick'), name = 'Diagnosis')
   
-
 ```
 
 
@@ -270,6 +267,7 @@ funnel(ma_out)
 # cleaning data
 d_clean <- d[complete.cases(d['EffectSize']),]
 d_clean$Paper <- as.factor(d_clean$Paper)
+
 ```
 
 
@@ -297,7 +295,6 @@ p1_stud <- c( # this is the one we're running with in the assignment
 #   prior(exponential(1), class = sd, group = Paper),# Prior for sd between papers
 #   prior(gamma(2,0.1), class = nu)
 # )
-
 
 ```
 
@@ -345,7 +342,6 @@ m1_stud_prior <- brm(
   core = 2
 )
 
-
 # m1_stud_gamma_prior <- brm(
 #   formula = f1,
 #   data = d_clean,
@@ -356,7 +352,6 @@ m1_stud_prior <- brm(
 #   threads = threading(2),
 #   core = 2
 # )
-
 
 set.seed(123)
 m1_stud <- brm(
@@ -369,7 +364,6 @@ m1_stud <- brm(
   threads = threading(2),
   core = 2
 )
-
 
 # m1_stud_gamma <- brm(
 #   formula = f1,
@@ -389,8 +383,6 @@ pp_poststud <- pp_check(m1_stud, nsamples = 100)
 set.seed(123)
 pp_priornorm <- pp_check(m1_prior, nsamples = 100)
 pp_postnorm <- pp_check(m1, nsamples = 100)
-
-
 
 # pp_poststud_gamma <- pp_check(m1_stud_gamma, nsamples = 100)
 # pp_priorstud_gamma <- pp_check(m1_stud_gamma_prior, nsamples = 100)
@@ -421,7 +413,6 @@ Effectsize, Intercept modelled w. Student's T prior")
 posterior_m1 <- posterior_samples(m1) 
 # posterior_m1_stud_gammanu <- posterior_samples(m1_stud_gamma) 
 posterior_m1_stud <- posterior_samples(m1_stud) 
-
 
 # Creating a long format of the posterior to plot the different distributions together
 posterior_m1 %>% pivot_longer(c(prior_Intercept,Intercept), names_to = "Estimates") %>%
@@ -478,11 +469,11 @@ summary(m1)
 summary(m1_stud)# this one is in the docs
 summary(m1_stud_gamma) 
 
-
 # trace plots - theyre mixing well and explores all space
 library(bayesplot)
 
 color_scheme_set("viridis")
+
 # model 1
 mcmc_trace(m1)+theme_classic()+ggtitle("m1, Trace plots to check chains")
 mcmc_trace(m1_stud)+theme_classic()+ggtitle("m2, Trace plots to check chains")
@@ -491,6 +482,7 @@ mcmc_rank_overlay(m1, pars= "b_Intercept")+theme_classic()
 mcmc_rank_overlay(m1_stud)+theme_classic()
 
 m1$data[3]
+
 # model 1 stud
 mcmc_trace(m1_stud)+theme_classic() 
 mcmc_trace(m1_stud, pars = "b_Intercept", "sd_Paper__Intercept")+theme_classic()+ggtitle("m1_stud, Caterpillar plot for b_Intercept and sd_Paper__Intercept")
@@ -510,7 +502,6 @@ m1$data[3]
 plot(hypothesis(m1_stud, "Intercept > 0", group = "Paper", scope = "coef"))
 
 plot(conditional_effects(m1_stud), points = T, rug = T)[[1]]+theme_classic() 
-
 
 ?hypothesis
 m1$formula
