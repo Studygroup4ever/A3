@@ -756,8 +756,12 @@ ggplot(posteriors_all, aes(values, fill = Estimate)) +
 
 
 #Comparing
+ass_m1_student_post$criteria$loo <- NULL
+ass_MA_student_post_m1$criteria$loo <- NULL
 ass_m1_student_post <- add_criterion(ass_m1_student_post, criterion = c("bayes_R2", "loo"))
 ass_MA_student_post_m1 <- add_criterion(ass_MA_student_post_m1, criterion = c("bayes_R2", "loo"))
+
+
 
 loo_compare(ass_m1_student_post, ass_MA_student_post_m1)
 loo_model_weights(ass_m1_student_post, ass_MA_student_post_m1)
