@@ -538,8 +538,8 @@ m1_stud <- add_criterion(m1_stud,criterion = c("bayes_R2", "loo"))
   
 ?kfold
   
-# m1 <- add_criterion(m1,criterion = c("bayes_R2", "loo"),reloo = T)
-# m1_stud <- add_criterion(m1_stud,criterion = c("bayes_R2", "loo"),reloo = T)
+# m1 <- add_criterion(m1,criterion = c("bayes_R2", "loo"), reloo = T)
+# m1_stud <- add_criterion(m1_stud,criterion = c("bayes_R2", "loo"), reloo = T)
 
 # we can use loo compare 
 loo_compare(m1, m1_stud)
